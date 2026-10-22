@@ -1,0 +1,18 @@
+{
+  "name": "reproseed",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reproduce difficult bugs, minimize failing scenarios, and generate reliable regression tests.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}
