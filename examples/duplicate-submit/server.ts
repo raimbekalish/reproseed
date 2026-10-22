@@ -10,21 +10,75 @@ export type DemoRecord = {
   createdAt: number;
 };
 
+export type DemoPage = "buggy" | "fixed-pending";
+
 export type DemoServerOptions = {
   host?: string;
   port?: number;
   appId?: string;
   resetAuthorization?: string;
+  /**
+   * `buggy` is the default duplicate-submit client.
+   * `fixed-pending` is test-only: it ignores a second submit while the first request is still in flight.
+   */
+  page?: DemoPage;
 };
 
 export type DemoServer = {
   origin: string;
   appId: string | undefined;
+  /** Successful POST /api/records calls since this process started. */
+  postCount: () => number;
   close: () => Promise<void>;
 };
 
 const BODY_LIMIT = 64 * 1024;
 const PAGE_HTML = readFileSync(fileURLToPath(new URL("./public/index.html", import.meta.url)), "utf8");
+
+function pageHtml(page: DemoPage | undefined): string {
+  if (page === undefined || page === "buggy") {
+    return PAGE_HTML;
+  }
+  if (page === "fixed-pending") {
+    return withPendingSubmitGuard(PAGE_HTML);
+  }
+  throw new Error("demo page must be buggy or fixed-pending");
+}
+
+/**
+ * Test-only fix for the duplicate-submit page.
+ * The default client sets `locked` only after the response arrives, so a second click during a
+ * delayed response creates another record. This variant ignores that click while the first
+ * request is still pending. The button stays enabled, matching the rest of the demo.
+ */
+function withPendingSubmitGuard(html: string): string {
+  let next = applyOnce(
+    html,
+    "    let locked = false;\n",
+    "    let locked = false;\n    let pending = false;\n",
+    "pending flag",
+  );
+  next = applyOnce(next, "      if (locked) {\n", "      if (locked || pending) {\n", "pending check");
+  next = applyOnce(next, "      lastSubmitAt = now;\n", "      lastSubmitAt = now;\n      pending = true;\n", "pending set");
+  next = applyOnce(
+    next,
+    "        submitButton.disabled = false;\n      });\n",
+    "        submitButton.disabled = false;\n      }).finally(() => {\n        pending = false;\n      });\n",
+    "pending clear",
+  );
+  if (!next.includes("if (locked || pending)") || next.includes("if (locked) {")) {
+    throw new Error("fixed-pending page did not install the in-flight guard");
+  }
+  return next;
+}
+
+function applyOnce(html: string, from: string, to: string, label: string): string {
+  const first = html.indexOf(from);
+  if (first === -1 || html.indexOf(from, first + from.length) !== -1) {
+    throw new Error(`fixed-pending page could not apply ${label}`);
+  }
+  return html.slice(0, first) + to + html.slice(first + from.length);
+}
 
 export async function startDemoServer(options: DemoServerOptions = {}): Promise<DemoServer> {
   const host = bindAddress(options.host ?? "127.0.0.1");
@@ -35,9 +89,16 @@ export async function startDemoServer(options: DemoServerOptions = {}): Promise<
   const appId = blankToUndefined(options.appId);
   const resetAuthorization = blankToUndefined(options.resetAuthorization);
   const records: DemoRecord[] = [];
+  const state: AppState = {
+    records,
+    appId,
+    resetAuthorization,
+    posts: 0,
+    html: pageHtml(options.page),
+  };
 
   const server = createServer((request, response) => {
-    void handleRequest(request, response, { records, appId, resetAuthorization }).catch(() => {
+    void handleRequest(request, response, state).catch(() => {
       if (!response.headersSent) {
         sendJson(response, 400, { error: "bad request" });
       } else {
@@ -66,6 +127,7 @@ export async function startDemoServer(options: DemoServerOptions = {}): Promise<
       resolve({
         origin: `http://${formatHost(address.address)}:${address.port}`,
         appId,
+        postCount: () => state.posts,
         close: () => closeServer(server),
       });
     });
@@ -101,6 +163,8 @@ type AppState = {
   records: DemoRecord[];
   appId: string | undefined;
   resetAuthorization: string | undefined;
+  posts: number;
+  html: string;
 };
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse, state: AppState): Promise<void> {
@@ -108,7 +172,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   const method = request.method ?? "GET";
 
   if (method === "GET" && url.pathname === "/") {
-    sendHtml(response, PAGE_HTML);
+    sendHtml(response, state.html);
     return;
   }
   if (method === "GET" && url.pathname === "/api/records") {
@@ -116,7 +180,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     return;
   }
   if (method === "POST" && url.pathname === "/api/records") {
-    await createRecord(request, response, state.records);
+    await createRecord(request, response, state);
     return;
   }
   if (method === "GET" && url.pathname === "/__reproseed/identity") {
@@ -134,7 +198,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   sendJson(response, 404, { error: "not found" });
 }
 
-async function createRecord(request: IncomingMessage, response: ServerResponse, records: DemoRecord[]): Promise<void> {
+async function createRecord(request: IncomingMessage, response: ServerResponse, state: AppState): Promise<void> {
   const contentType = request.headers["content-type"];
   if (typeof contentType !== "string" || !contentType.startsWith("application/json")) {
     sendJson(response, 415, { error: "content type must be application/json" });
@@ -151,7 +215,8 @@ async function createRecord(request: IncomingMessage, response: ServerResponse, 
     note: record.note,
     createdAt: Date.now(),
   };
-  records.push(stored);
+  state.records.push(stored);
+  state.posts += 1;
   sendJson(response, 201, stored);
 }
 

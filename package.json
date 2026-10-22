@@ -12,9 +12,11 @@
     "test": "node --test test/*.test.ts",
     "test:demo": "node --test examples/duplicate-submit/*.test.ts",
     "test:runner": "node --test test/runner/*.test.ts",
+    "test:export": "node --test test/export/regression.test.ts",
     "demo": "node examples/duplicate-submit/server.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^24.10.1",
     "playwright": "^1.64.1",
     "typescript": "^5.9.3"

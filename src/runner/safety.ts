@@ -20,7 +20,7 @@ export function assertLoopbackOrigin(origin: string): void {
   if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
     throw new Error("demo reset target must be an origin");
   }
-  if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "::1") {
+  if (!isLoopbackHost(url.hostname)) {
     throw new Error(`demo reset refuses non-loopback host ${url.hostname}`);
   }
 }
@@ -84,4 +84,9 @@ export function assertPageStayed(pageUrl: string, origin: string, allowBlank: bo
   ) {
     throw new Error("navigation left the authorized origin");
   }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
 }
