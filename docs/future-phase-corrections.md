@@ -47,3 +47,5 @@ Track probe invocations separately from candidate evaluations.
 ## Phase boundary
 
 Phase 1 should add the buggy demo and a direct script that shows the delay is load-bearing. It should follow corrections 1–4. It should not add the React dashboard, an AI API, or a CLI.
+
+Phase 2 adds the Playwright replay runner under `src/runner`. One probe call is one isolated replay: authorized reset, a fresh browser context, the selected steps, then the record-count oracle. `attemptTimeoutMs` bounds that replay. The runner does not call `minimize()`. Connecting them is later work.

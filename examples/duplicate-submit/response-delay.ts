@@ -1,4 +1,6 @@
-import type { Page, Route } from "playwright";
+import type { Page } from "playwright";
+
+import { installMatchedResponseDelay } from "../../src/runner/faults.ts";
 
 export type ResponseDelay = {
   postCount: () => number;
@@ -7,60 +9,26 @@ export type ResponseDelay = {
 
 /**
  * Holds the browser-visible response after the server has processed the POST.
- * `route.fetch()` performs the real request. The wait happens before
- * `route.fulfill({ response })`. Delaying before `route.continue()` would
- * hold request dispatch instead, and would not reproduce this bug.
+ * Delegates to the runner so the demo and the replayer share one delay path:
+ * `route.fetch()`, wait, then `route.fulfill({ response })`.
  */
 export async function installResponseDelay(page: Page, delayMs: number): Promise<ResponseDelay> {
   if (!Number.isFinite(delayMs) || delayMs <= 0) {
     throw new Error("response delay must be a positive number");
   }
-  const controller = new AbortController();
+  const origin = new URL(page.url()).origin;
   let posts = 0;
-
-  const handler = async (route: Route): Promise<void> => {
-    try {
-      if (route.request().method() !== "POST") {
-        await route.fallback();
-        return;
-      }
-      const response = await route.fetch();
+  const delay = await installMatchedResponseDelay(page.context(), {
+    origin,
+    urlIncludes: "/api/records",
+    method: "POST",
+    ms: delayMs,
+    onDelayedPost: () => {
       posts += 1;
-      await sleep(delayMs, controller.signal);
-      if (controller.signal.aborted) {
-        await route.abort();
-        return;
-      }
-      await route.fulfill({ response });
-    } catch {
-      // The page or context is closing.
-    }
-  };
-
-  await page.route("**/api/records", handler);
+    },
+  });
   return {
     postCount: () => posts,
-    dispose: async () => {
-      controller.abort();
-      await page.unroute("**/api/records", handler);
-    },
+    dispose: () => delay.dispose(),
   };
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-    const onAbort = (): void => {
-      clearTimeout(timer);
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
 }

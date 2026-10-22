@@ -1,6 +1,7 @@
 /**
  * Scenario and report contracts for the minimizer.
- * The runner, demo, and CLI are later phases. See docs/future-phase-corrections.md.
+ * The runner in src/runner consumes these types. This module stays free of Playwright.
+ * See docs/future-phase-corrections.md.
  */
 
 export class ScenarioError extends Error {

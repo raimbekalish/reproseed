@@ -4,7 +4,9 @@ Reproduce difficult bugs, minimize failing scenarios, and generate reliable regr
 
 Phase 0 shortens an ordered scenario while preserving one confirmed failure. It does not launch a browser.
 
-Phase 1 is a loopback duplicate-submit demo. The minimizer is not connected to it yet.
+Phase 1 is a loopback duplicate-submit demo.
+
+Phase 2 replays a scenario from a clean authorized state in a fresh browser context. It returns an `ExecutionOutcome` and does not call the minimizer.
 
 Later phases must follow [docs/future-phase-corrections.md](docs/future-phase-corrections.md).
 
@@ -20,6 +22,7 @@ npx playwright install chromium
 npm run typecheck
 npm test
 npm run test:demo
+npm run test:runner
 ```
 
 ## Demo server
