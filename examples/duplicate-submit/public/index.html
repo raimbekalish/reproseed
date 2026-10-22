@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Duplicate submit demo</title>
+</head>
+<body>
+  <h1>New record</h1>
+  <form id="record-form">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="off" required>
+    <label for="note">Note</label>
+    <input id="note" name="note" type="text" autocomplete="off">
+    <button type="button" id="preview">Preview</button>
+    <button type="submit" id="submit">Submit</button>
+  </form>
+  <p id="preview-output"></p>
+  <p id="status"></p>
+  <script>
+    const GUARD_MS = 400;
+    let locked = false;
+    let lastSubmitAt = 0;
+
+    const form = document.querySelector("#record-form");
+    const emailInput = document.querySelector("#email");
+    const noteInput = document.querySelector("#note");
+    const previewButton = document.querySelector("#preview");
+    const previewOutput = document.querySelector("#preview-output");
+    const status = document.querySelector("#status");
+    const submitButton = document.querySelector("#submit");
+
+    if (
+      !(form instanceof HTMLFormElement) ||
+      !(emailInput instanceof HTMLInputElement) ||
+      !(noteInput instanceof HTMLInputElement) ||
+      !(previewButton instanceof HTMLButtonElement) ||
+      !(previewOutput instanceof HTMLElement) ||
+      !(status instanceof HTMLElement) ||
+      !(submitButton instanceof HTMLButtonElement)
+    ) {
+      throw new Error("duplicate-submit form is incomplete");
+    }
+
+    previewButton.addEventListener("click", () => {
+      previewOutput.textContent = noteInput.value;
+    });
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (locked) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastSubmitAt < GUARD_MS) {
+        return;
+      }
+      lastSubmitAt = now;
+      fetch("/api/records", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: emailInput.value, note: noteInput.value }),
+      }).then((response) => {
+        if (!response.ok) {
+          return;
+        }
+        locked = true;
+        status.textContent = "Saved";
+        // The control stays enabled so a later click is delivered, then ignored.
+        submitButton.disabled = false;
+      });
+    });
+  </script>
+</body>
+</html>
