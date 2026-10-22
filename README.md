@@ -6,7 +6,9 @@ Phase 0 shortens an ordered scenario while preserving one confirmed failure. It 
 
 Phase 1 is a loopback duplicate-submit demo.
 
-Phase 2 replays a scenario from a clean authorized state in a fresh browser context. It returns an `ExecutionOutcome` and does not call the minimizer.
+Phase 2 replays a scenario from a clean authorized state in a fresh browser context. It returns an `ExecutionOutcome`.
+
+Phase 3 passes that probe to the minimizer. A verified run of the 9-step duplicate-submit scenario writes `artifacts/report.json` with the reset credential removed.
 
 Later phases must follow [docs/future-phase-corrections.md](docs/future-phase-corrections.md).
 
