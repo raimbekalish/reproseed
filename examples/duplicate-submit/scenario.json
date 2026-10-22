@@ -1,0 +1,42 @@
+{
+  "id": "duplicate-submit",
+  "target": {
+    "appId": "duplicate-submit"
+  },
+  "reset": {
+    "method": "POST",
+    "path": "/__reproseed/reset"
+  },
+  "steps": [
+    { "id": "open", "kind": "goto", "path": "/", "dependsOn": [] },
+    { "id": "preview", "kind": "click", "selector": "#preview", "dependsOn": ["open"] },
+    { "id": "email", "kind": "fill", "selector": "#email", "value": "a@example.com", "dependsOn": ["open"] },
+    { "id": "note", "kind": "fill", "selector": "#note", "value": "hello", "dependsOn": ["open"] },
+    { "id": "decoy-wait", "kind": "wait", "ms": 100, "dependsOn": [] },
+    {
+      "id": "slow",
+      "kind": "delay",
+      "urlIncludes": "/api/records",
+      "method": "POST",
+      "ms": 2000,
+      "dependsOn": []
+    },
+    { "id": "submit-1", "kind": "click", "selector": "#submit", "dependsOn": ["open", "email"] },
+    { "id": "gap", "kind": "wait", "ms": 800, "dependsOn": [] },
+    { "id": "submit-2", "kind": "click", "selector": "#submit", "dependsOn": ["open", "email"] }
+  ],
+  "oracle": {
+    "id": "record-count",
+    "request": { "method": "GET", "path": "/api/records" },
+    "match": { "field": "email", "value": "a@example.com" },
+    "expect": 1
+  },
+  "budget": {
+    "maxReplayExecutions": 60,
+    "maxWallClockMs": 300000,
+    "attemptTimeoutMs": 20000,
+    "baselineRuns": 3,
+    "reductionConfirmRuns": 2,
+    "verifyRuns": 5
+  }
+}

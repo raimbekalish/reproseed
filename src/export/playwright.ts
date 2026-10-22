@@ -78,8 +78,22 @@ function exportStep(step: Step): ExportStep {
   }
 }
 
+/**
+ * The generated spec embeds this TypeScript source.
+ * The build copies `runtime-config.ts` next to the compiled exporter so the
+ * CLI does not need the original `src/` tree at runtime.
+ */
 function readRuntimeSource(): string {
-  const source = readFileSync(new URL("./runtime-config.ts", import.meta.url), "utf8");
+  const url = new URL("./runtime-config.ts", import.meta.url);
+  let source: string;
+  try {
+    source = readFileSync(url, "utf8");
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? String(error.code) : "";
+    throw new ExportError(
+      code === "ENOENT" ? "embedded runtime config is missing from the package" : "embedded runtime config could not be read",
+    );
+  }
   if (/(^|\n)\s*import\s|require\s*\(/.test(source)) {
     throw new ExportError("embedded runtime config must stay free of imports");
   }
