@@ -150,7 +150,10 @@ describe("browser failure reduction", { concurrency: false }, () => {
         assert.equal(cycle.resetAuthorization, resetAuthorization);
         assert.equal(cycle.confirmTotal, 0);
         assert.ok(cycle.confirmAt <= cycle.oracleAt);
-        assertOracleAgrees(replay.outcome, cycle.oracleMatched, scenario.oracle.expect);
+        assert.equal(scenario.oracle.id, "record-count");
+        if (scenario.oracle.id === "record-count") {
+          assertOracleAgrees(replay.outcome, cycle.oracleMatched, scenario.oracle.expect);
+        }
         if (isExactDuplicate(replay.outcome)) {
           assert.ok(replay.outcome.durationMs >= delayMs - 100, `replay ${replay.id} duration ${replay.outcome.durationMs}`);
           assert.ok(

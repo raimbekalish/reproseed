@@ -1,7 +1,8 @@
 import { assertBudget } from "../core/budget.ts";
 import { assertScenario, findMissingDependencies, orderIds } from "../core/dependencies.ts";
 import { signaturesEqual } from "../core/signature.ts";
-import type { DuplicateSignature, ExecutionOutcome, MinimizeReport, Scenario, Step } from "../core/types.ts";
+import type { DuplicateSignature, DomMismatchSignature, ExecutionOutcome, MinimizeReport, Scenario, Signature, Step } from "../core/types.ts";
+import { normalizeDomText } from "../runner/dom-text.ts";
 import { ExportError } from "./export-error.ts";
 import { authorizedUrl, assertLoopbackHttpOrigin } from "./runtime-config.ts";
 
@@ -13,8 +14,9 @@ export type VerifiedExport = {
 
 /**
  * A regression spec is exported only from a verified 1-minimal report whose five
- * final runs reproduced one known record-count failure. The kept steps come from
- * the original scenario, in scenario order.
+ * final runs reproduced one known oracle failure. The kept steps come from the
+ * original scenario, in scenario order. The spec asserts the intended result,
+ * not the observed failure.
  */
 export function selectVerifiedExport(scenario: Scenario, report: MinimizeReport): VerifiedExport {
   try {
@@ -102,15 +104,22 @@ export function selectVerifiedExport(scenario: Scenario, report: MinimizeReport)
     }
     return step;
   });
-  assertSupportedSteps(origin, scenario.oracle.request.path, steps);
+  assertSupportedSteps(origin, scenario, steps);
   return {
     steps,
-    expectCount: scenario.oracle.expect,
+    expectCount: scenario.oracle.id === "record-count" ? scenario.oracle.expect : 0,
     timeoutMs: testTimeoutMs(scenario, steps),
   };
 }
 
-function requireBaseline(scenario: Scenario, report: MinimizeReport): DuplicateSignature {
+function requireBaseline(scenario: Scenario, report: MinimizeReport): Signature {
+  if (scenario.oracle.id === "dom-text") {
+    return requireDomBaseline(scenario, report);
+  }
+  return requireRecordBaseline(scenario, report);
+}
+
+function requireRecordBaseline(scenario: Scenario, report: MinimizeReport): DuplicateSignature {
   const signature = report.baselineSignature;
   if (
     signature === undefined ||
@@ -126,6 +135,9 @@ function requireBaseline(scenario: Scenario, report: MinimizeReport): DuplicateS
   if (!Number.isFinite(signature.facts.actual) || !Number.isFinite(signature.facts.expect)) {
     throw new ExportError("baseline failure is not known");
   }
+  if (scenario.oracle.id !== "record-count") {
+    throw new ExportError("baseline failure does not match the scenario oracle");
+  }
   if (signature.facts.email !== scenario.oracle.match.value || signature.facts.expect !== scenario.oracle.expect) {
     throw new ExportError("baseline failure does not match the scenario oracle");
   }
@@ -135,6 +147,31 @@ function requireBaseline(scenario: Scenario, report: MinimizeReport): DuplicateS
   const code = signature.facts.actual > signature.facts.expect ? "DUPLICATE" : "COUNT_MISMATCH";
   if (signature.code !== code) {
     throw new ExportError("baseline failure code does not match the observed count");
+  }
+  return signature;
+}
+
+function requireDomBaseline(scenario: Scenario, report: MinimizeReport): DomMismatchSignature {
+  const signature = report.baselineSignature;
+  if (
+    signature === undefined ||
+    signature.oracleId !== "dom-text" ||
+    signature.code !== "DOM_MISMATCH" ||
+    signature.facts === undefined ||
+    typeof signature.facts.selector !== "string" ||
+    typeof signature.facts.expect !== "string" ||
+    typeof signature.facts.actual !== "string"
+  ) {
+    throw new ExportError("baseline failure is not known");
+  }
+  if (scenario.oracle.id !== "dom-text") {
+    throw new ExportError("baseline failure does not match the scenario oracle");
+  }
+  if (signature.facts.selector !== scenario.oracle.selector || signature.facts.expect !== normalizeDomText(scenario.oracle.expect)) {
+    throw new ExportError("baseline failure does not match the scenario oracle");
+  }
+  if (signature.facts.actual === signature.facts.expect) {
+    throw new ExportError("baseline failure does not differ from the intended result text");
   }
   return signature;
 }
@@ -149,8 +186,11 @@ function assertIndependentReplays(replays: MinimizeReport["replays"]): void {
   }
 }
 
-function assertSupportedSteps(origin: string, oraclePath: string, steps: readonly Step[]): void {
-  assertStaysOnOrigin(origin, oraclePath, "oracle path");
+function assertSupportedSteps(origin: string, scenario: Scenario, steps: readonly Step[]): void {
+  if (scenario.oracle.id === "record-count") {
+    assertStaysOnOrigin(origin, scenario.oracle.request.path, "oracle path");
+  }
+  assertStaysOnOrigin(origin, "/api/records", "record list path");
   assertStaysOnOrigin(origin, "/__reproseed/reset", "reset path");
   assertStaysOnOrigin(origin, "/__reproseed/identity", "identity path");
   for (const step of steps) {
@@ -163,7 +203,7 @@ function assertSupportedSteps(origin: string, oraclePath: string, steps: readonl
       case "wait":
         break;
       case "delay":
-        if (step.method !== "POST") {
+        if (step.method !== "GET" && step.method !== "POST") {
           throw new ExportError(`unsupported delay method for ${step.id}`);
         }
         break;
@@ -198,7 +238,7 @@ function testTimeoutMs(scenario: Scenario, steps: readonly Step[]): number {
   return timeout;
 }
 
-function failedWith(outcome: ExecutionOutcome | undefined, signature: DuplicateSignature): boolean {
+function failedWith(outcome: ExecutionOutcome | undefined, signature: Signature): boolean {
   if (outcome === undefined || outcome.status !== "fail") {
     return false;
   }

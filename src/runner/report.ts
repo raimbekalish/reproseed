@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { Budget, MinimizeReport, Scenario, Step } from "../core/types.ts";
+import type { Budget, MinimizeReport, Oracle, Scenario, Step } from "../core/types.ts";
 
 const REDACTED = "[redacted]";
 const SENSITIVE_KEY = /^(resetauthorization|authorization|password|cookie|set-cookie|x-reproseed-reset-authorization)$/i;
@@ -12,7 +12,7 @@ export type SanitizedMinimizeArtifact = {
     target: { origin: string; appId: string };
     reset: Scenario["reset"];
     steps: Array<{ id: string; kind: Step["kind"] }>;
-    oracle: Scenario["oracle"];
+    oracle: Oracle;
     budget: Budget;
   };
   report: MinimizeReport;
@@ -32,12 +32,7 @@ export function sanitizeArtifact(scenario: Scenario, report: MinimizeReport): Sa
       },
       reset: { method: scenario.reset.method, path: scenario.reset.path },
       steps: scenario.steps.map((step) => ({ id: step.id, kind: step.kind })),
-      oracle: {
-        id: scenario.oracle.id,
-        request: { method: scenario.oracle.request.method, path: scenario.oracle.request.path },
-        match: { field: scenario.oracle.match.field, value: scenario.oracle.match.value },
-        expect: scenario.oracle.expect,
-      },
+      oracle: copyOracle(scenario.oracle),
       budget: { ...scenario.budget },
     },
     report: JSON.parse(JSON.stringify(report)) as MinimizeReport,
@@ -49,6 +44,22 @@ export async function writeSanitizedReport(path: string, scenario: Scenario, rep
   const artifact = sanitizeArtifact(scenario, report);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+}
+
+function copyOracle(oracle: Oracle): Oracle {
+  if (oracle.id === "record-count") {
+    return {
+      id: "record-count",
+      request: { method: oracle.request.method, path: oracle.request.path },
+      match: { field: oracle.match.field, value: oracle.match.value },
+      expect: oracle.expect,
+    };
+  }
+  return {
+    id: "dom-text",
+    selector: oracle.selector,
+    expect: oracle.expect,
+  };
 }
 
 function usableSecrets(secrets: readonly string[]): string[] {

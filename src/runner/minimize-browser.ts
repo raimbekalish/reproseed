@@ -9,8 +9,8 @@ import type { FetchLike } from "./reset.ts";
 /**
  * Runs the minimizer against isolated Chromium replays.
  * Each probe call is one replay: authorized reset, a fresh context, the
- * selected steps, settled responses, then the record-count oracle.
- * The minimizer does not read the record list itself.
+ * selected steps, settled responses, then the scenario oracle.
+ * The minimizer does not read the page or the record list itself.
  */
 export async function minimizeWithBrowser(input: {
   scenario: Scenario;

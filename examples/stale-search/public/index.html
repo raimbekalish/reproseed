@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Stale search demo</title>
+</head>
+<body>
+  <h1>Search</h1>
+  <form id="search-form">
+    <label for="query">Query</label>
+    <input id="query" name="query" type="text" autocomplete="off">
+    <label for="note">Note</label>
+    <input id="note" name="note" type="text" autocomplete="off">
+    <button type="button" id="preview">Preview</button>
+    <button type="button" id="search">Search</button>
+  </form>
+  <p id="preview-output"></p>
+  <p id="status"></p>
+  <p id="results"></p>
+  <script>
+    const form = document.querySelector("#search-form");
+    const queryInput = document.querySelector("#query");
+    const noteInput = document.querySelector("#note");
+    const previewButton = document.querySelector("#preview");
+    const previewOutput = document.querySelector("#preview-output");
+    const status = document.querySelector("#status");
+    const searchButton = document.querySelector("#search");
+    const results = document.querySelector("#results");
+
+    if (
+      !(form instanceof HTMLFormElement) ||
+      !(queryInput instanceof HTMLInputElement) ||
+      !(noteInput instanceof HTMLInputElement) ||
+      !(previewButton instanceof HTMLButtonElement) ||
+      !(previewOutput instanceof HTMLElement) ||
+      !(status instanceof HTMLElement) ||
+      !(searchButton instanceof HTMLButtonElement) ||
+      !(results instanceof HTMLElement)
+    ) {
+      throw new Error("stale-search page is incomplete");
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+    });
+
+    previewButton.addEventListener("click", () => {
+      previewOutput.textContent = noteInput.value;
+    });
+
+    // issued counts clicks. A response still replaces #results when it is older than
+    // the result already shown. The suffix marks that overwrite so its text differs
+    // from a search that only requested alpha. The fixed page returns before this write.
+    let issued = 0;
+
+    searchButton.addEventListener("click", () => {
+      const query = queryInput.value;
+      const requestId = ++issued;
+      status.textContent = "Searching";
+      fetch("/api/search?q=" + encodeURIComponent(query)).then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const body = await response.json();
+        if (typeof body.text !== "string") {
+          return;
+        }
+        const shownId = Number(results.dataset.requestId ?? "0");
+        const text = shownId > requestId ? `${body.text} (outdated)` : body.text;
+        results.textContent = text;
+        if (shownId <= requestId) {
+          results.dataset.requestId = String(requestId);
+        }
+        status.textContent = "Done";
+      });
+    });
+  </script>
+</body>
+</html>

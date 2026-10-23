@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "examples/duplicate-submit/scenario.json",
+    "examples/stale-search/scenario.json",
     "README.md"
   ],
   "repository": {
@@ -27,10 +28,12 @@
     "test": "node --test test/*.test.ts",
     "test:demo": "node --test examples/duplicate-submit/*.test.ts",
     "test:runner": "node --test test/runner/*.test.ts",
-    "test:export": "node --test test/export/regression.test.ts",
+    "test:export": "node --test test/export/regression.test.ts test/export/stale-regression.test.ts",
+    "test:search": "node --test examples/stale-search/*.test.ts",
     "test:cli": "node --test test/cli/args.test.ts test/cli/scenario.test.ts test/cli/command.test.ts",
     "test:cli:e2e": "node --test test/cli/e2e.test.ts",
-    "demo": "node examples/duplicate-submit/server.ts"
+    "demo": "node examples/duplicate-submit/server.ts",
+    "demo:search": "node examples/stale-search/server.ts"
   },
   "dependencies": {
     "playwright": "^1.64.1"

@@ -55,3 +55,17 @@ Phase 3 connects `startReplayRuntime().probeFor(scenario)` to `minimize()`. Base
 Phase 4 adds `src/export`. It writes a Playwright spec from the original scenario plus a `verified-one-minimal` report whose five final runs reproduced one known record-count failure. The spec asserts the oracle's intended count (`expect(actual).toBe(1)` for duplicate-submit). It must not be changed so that two records are the expected result. The sanitized report is not enough on its own: selectors, values, and delay durations come from the scenario. The spec does not call `minimize()`. Unstable, incomplete, and budget-exhausted reports are refused.
 
 Phase 5 adds the local `reproseed minimize` command. It loads a scenario file, takes the reset credential from `REPROSEED_RESET_AUTHORIZATION`, and runs `minimizeWithBrowser()`. The Playwright spec is exported only from that same verified report. The built CLI embeds `runtime-config.ts` from the package, not from a source checkout. The command still refuses non-loopback targets. It does not add a dashboard, an AI API, a cloud backend, or support for arbitrary production websites.
+
+## Phase 6 — two failure types, one engine
+
+Phase 6 adds a DOM-text oracle and GET response delays. The minimizer in `src/core` still does not import Playwright and does not mention either example. A probe returns an `ExecutionOutcome`. The baseline signature is a `TargetSignature`: record-count (`DUPLICATE` or `COUNT_MISMATCH`) or DOM text (`DOM_MISMATCH`). Runner timeouts and errors are still not the target. Signature equality includes the actual DOM text, so a different rendered string is a different failure. The search page labels an older response that replaces a newer one (`Results for alpha (outdated)`). A probe that only searches for alpha renders `Results for alpha` and does not count as that failure. The minimizer has no search-specific code; it only compares those signatures.
+
+DOM comparison is defined in `src/runner/dom-text.ts`. The runner uses Playwright's locator `textContent` on exactly one element, then normalizes whitespace. The scenario file cannot supply a script. Missing, multiple, and invalid selectors are runner errors.
+
+GET and POST delays share `route.fetch()`, the wait, and `route.fulfill()`. Matching lives in `src/runner/delay-match.ts`. POST substring matching on the path and query is unchanged. GET uses a boundary so one search query does not delay another. Control paths are never delayed.
+
+The exporter writes one spec shape for both oracles. It asserts the intended result. Five fresh verification replays are still required. The search app's reset still proves `GET /api/records` is an empty record list. That check is the local-target contract, not part of the search bug.
+
+One measured minimization of `examples/stale-search/scenario.json` used 52 replay executions, 14 cache hits, and about 30 seconds. The scenario budget allows 80 replays and 180 seconds so a slower machine can finish the same search without raising the ceiling to the old 90-replay, six-minute draft.
+
+This phase does not add a dashboard, an AI API, a cloud backend, authentication, a new database, or npm publication.

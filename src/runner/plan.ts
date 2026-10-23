@@ -18,7 +18,9 @@ export function prepareReplay(scenario: Scenario, stepIds: readonly string[]): P
   assertBudget(scenario.budget);
   assertLocalAuthorizedTarget(scenario.target.origin, scenario.target.appId, scenario.target.resetAuthorization);
   const origin = canonicalOrigin(scenario.target.origin);
-  resolveAuthorizedUrl(origin, scenario.oracle.request.path);
+  if (scenario.oracle.id === "record-count") {
+    resolveAuthorizedUrl(origin, scenario.oracle.request.path);
+  }
   resolveAuthorizedUrl(origin, scenario.reset.path);
   const ordered = orderIds(scenario.steps, stepIds);
   const missing = findMissingDependencies(scenario.steps, ordered);

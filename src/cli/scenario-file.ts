@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { assertBudget } from "../core/budget.ts";
 import { assertScenario } from "../core/dependencies.ts";
-import type { Budget, RecordCountOracle, ResetSpec, Scenario, Step } from "../core/types.ts";
+import type { Budget, DelayedMethod, Oracle, ResetSpec, Scenario, Step } from "../core/types.ts";
 import { assertLocalAuthorizedTarget, canonicalOrigin } from "../runner/safety.ts";
 import { CliError, EXIT } from "./errors.ts";
 
@@ -11,7 +11,8 @@ const SCENARIO_BYTES = 1_000_000;
 const TOP_LEVEL = ["id", "target", "reset", "steps", "oracle", "budget"] as const;
 const TARGET_FIELDS = ["origin", "appId"] as const;
 const RESET_FIELDS = ["method", "path"] as const;
-const ORACLE_FIELDS = ["id", "request", "match", "expect"] as const;
+const RECORD_ORACLE_FIELDS = ["id", "request", "match", "expect"] as const;
+const DOM_ORACLE_FIELDS = ["id", "selector", "expect"] as const;
 const BUDGET_FIELDS = [
   "maxReplayExecutions",
   "maxWallClockMs",
@@ -187,7 +188,7 @@ function parseStep(value: unknown, index: number): Step {
         ...base,
         kind,
         urlIncludes: requiredString(record, "urlIncludes", `steps[${index}].urlIncludes`),
-        method: parsePostMethod(record.method, index),
+        method: parseDelayMethod(record.method, index),
         ms: requiredNumber(record, "ms", `steps[${index}].ms`),
       };
     default:
@@ -195,11 +196,11 @@ function parseStep(value: unknown, index: number): Step {
   }
 }
 
-function parsePostMethod(value: unknown, index: number): "POST" {
-  if (value !== "POST") {
-    throw new CliError(`steps[${index}].method must be POST`, EXIT.usage);
+function parseDelayMethod(value: unknown, index: number): DelayedMethod {
+  if (value !== "GET" && value !== "POST") {
+    throw new CliError(`steps[${index}].method must be GET or POST`, EXIT.usage);
   }
-  return "POST";
+  return value;
 }
 
 function parseDependsOn(value: unknown, index: number): string[] {
@@ -214,16 +215,27 @@ function parseDependsOn(value: unknown, index: number): string[] {
   });
 }
 
-function parseOracle(value: unknown): RecordCountOracle {
+function parseOracle(value: unknown): Oracle {
   const record = objectRecord(value, "oracle");
-  rejectUnknown(record, ORACLE_FIELDS, "oracle");
+  const id = requiredString(record, "id", "oracle.id");
+  if (id === "dom-text") {
+    rejectUnknown(record, DOM_ORACLE_FIELDS, "oracle");
+    return {
+      id: "dom-text",
+      selector: requiredString(record, "selector", "oracle.selector"),
+      expect: requiredPresentString(record, "expect", "oracle.expect"),
+    };
+  }
+  if (id !== "record-count") {
+    throw new CliError("oracle must be record-count or dom-text", EXIT.usage);
+  }
+  rejectUnknown(record, RECORD_ORACLE_FIELDS, "oracle");
   const request = objectRecord(record.request, "oracle.request");
   rejectUnknown(request, ["method", "path"], "oracle.request");
   const match = objectRecord(record.match, "oracle.match");
   rejectUnknown(match, ["field", "value"], "oracle.match");
-  const id = requiredString(record, "id", "oracle.id");
   const method = requiredString(request, "method", "oracle.request.method");
-  if (id !== "record-count" || method !== "GET") {
+  if (method !== "GET") {
     throw new CliError("oracle must be a GET record-count check", EXIT.usage);
   }
   const field = requiredString(match, "field", "oracle.match.field");
