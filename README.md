@@ -68,9 +68,9 @@ The DOM-text oracle is:
 
 Comparison rule: the runner reads `textContent` from exactly one match. It does not read `innerHTML` and it does not run JavaScript from the scenario. Both sides replace non-breaking spaces, collapse each whitespace run to one space, and trim. The comparison is then exact. The failure signature is `DOM_MISMATCH` and stores the selector, the normalized expected text, and the normalized actual text. A different actual string is a different failure. A missing element, several matches, or an invalid selector is a runner error, not `DOM_MISMATCH`.
 
-A delay step can now name `GET` or `POST`. The runner still calls `route.fetch()`, waits, then `route.fulfill()`. The needle is matched against the path and query, not the origin. POST keeps substring matching, so `/api/records` still delays that POST. GET requires the needle to end on `&`, `#`, or the end of the path and query, so `/api/search?q=alpha` does not delay `/api/search?q=alphabet`, `/api/search?q=beta`, the document, or `GET /api/records`. `/__reproseed/identity` and `/__reproseed/reset` are never delayed.
+A delay step can now name `GET` or `POST`. The runner still calls `route.fetch()`, waits, then `route.fulfill()`. The needle is matched against the path and query, not the origin. POST keeps substring matching, so `/api/records` still delays that POST. GET requires the needle to end on `&`, `#`, or the end of the path and query, so `/api/search?q=alpha` does not delay `/api/search?q=alphabet`, `/api/search?q=beta`, the document, or `GET /api/search-history`. `/__reproseed/identity` and `/__reproseed/reset` are never delayed.
 
-Every local target, including this search app, still exposes `GET /api/records` as an empty record list after an authorized reset. The DOM oracle does not replace that check.
+Clean state is a declared `reset.verify` rule. The only rule is a same-origin `GET` that must return a JSON array of length 0. This search scenario checks `GET /api/search-history`, which is the list of queries the server accepted. After an authorized reset that list is empty. The app does not keep a record store for the runner. A scenario that omits `verify` still checks `GET /api/records`, which is what duplicate-submit uses. The DOM oracle does not replace the clean-state check.
 
 The checked-in budget allows 80 replays and three minutes. A measured run on this tree used 52 replays, 14 cache hits, and about 30 seconds, and it removed the note, preview, decoy wait, and the gap while keeping the alpha GET delay and both searches.
 
@@ -164,6 +164,6 @@ The spec imports only `@playwright/test` and Node built-ins. It does not import 
 - Node.js 22 or newer
 - `@playwright/test` and Chromium at the same Playwright version as the `playwright` package in this repo (`npm test` checks that those two installed versions match)
 - The three environment variables above, supplied by the runner and not committed
-- A loopback app that serves the UI the steps drive, `GET /__reproseed/identity`, an authorized `POST /__reproseed/reset`, and `GET /api/records` as an empty record list after reset. A record-count oracle also reads that record list. A DOM-text oracle reads the selected element's text instead.
+- A loopback app that serves the UI the steps drive, `GET /__reproseed/identity`, an authorized `POST /__reproseed/reset`, and the scenario's clean-state `GET`. That GET must return a JSON array of length 0 after reset. When the scenario omits `reset.verify`, the path is `/api/records`. A record-count oracle reads its own record list. A DOM-text oracle reads the selected element's text instead.
 
 That is the ReproSeed local-target contract. The file is not a drop-in test for an arbitrary site.

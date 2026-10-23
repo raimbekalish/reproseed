@@ -1,5 +1,6 @@
 import { errors, type Browser, type BrowserContext, type Page } from "playwright";
 
+import { cleanStateVerify } from "../core/clean-state.ts";
 import type {
   DomTextOracle,
   ExecutionOutcome,
@@ -135,6 +136,7 @@ async function executePrepared(
       origin,
       expectedAppId: scenario.target.appId,
       resetAuthorization: scenario.target.resetAuthorization,
+      verify: cleanStateVerify(scenario.reset),
       fetchImpl,
       signal: controller.signal,
     });

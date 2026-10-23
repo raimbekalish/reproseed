@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { CliError, EXIT } from "../../src/cli/errors.ts";
 import { loadScenarioFile } from "../../src/cli/scenario-file.ts";
+import { cleanStateVerify, DEFAULT_CLEAN_STATE_PATH } from "../../src/core/clean-state.ts";
 import { duplicateSubmitSteps } from "../fixture.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/duplicate-submit/scenario.json", import.meta.url));
@@ -28,6 +29,8 @@ describe("scenario file", () => {
       assert.equal(scenario.target.resetAuthorization, token);
       assert.deepEqual(scenario.steps, duplicateSubmitSteps());
       assert.equal(scenario.steps.length, 9);
+      assert.equal(scenario.reset.verify, undefined);
+      assert.equal(cleanStateVerify(scenario.reset).path, DEFAULT_CLEAN_STATE_PATH);
       assert.deepEqual(scenario.budget, {
         maxReplayExecutions: 60,
         maxWallClockMs: 300_000,
@@ -154,6 +157,11 @@ describe("scenario file", () => {
     });
     assert.equal(scenario.id, "stale-search");
     assert.equal(scenario.target.resetAuthorization, token);
+    assert.deepEqual(scenario.reset.verify, {
+      kind: "json-array-empty",
+      method: "GET",
+      path: "/api/search-history",
+    });
     assert.equal(scenario.oracle.id, "dom-text");
     if (scenario.oracle.id === "dom-text") {
       assert.equal(scenario.oracle.selector, "#results");
@@ -166,6 +174,47 @@ describe("scenario file", () => {
       assert.equal(delay.urlIncludes, "/api/search?q=alpha");
     }
     assert.ok(scenario.steps.length > 6);
+  });
+
+  it("rejects a clean-state rule that is not one same-origin empty-array GET", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-verify-"));
+    try {
+      await expectUsage(
+        await writeScenario(directory, (scenario) => {
+          scenario.reset.verify = { kind: "shell", method: "GET", path: "/api/records", command: "true" };
+        }, "shell-verify.json"),
+        undefined,
+        env(token),
+        /json-array-empty|unsupported field/,
+      );
+      await expectUsage(
+        await writeScenario(directory, (scenario) => {
+          scenario.reset.verify = { kind: "json-array-empty", method: "POST", path: "/api/records" };
+        }, "post-verify.json"),
+        undefined,
+        env(token),
+        /json-array-empty/,
+      );
+      await expectUsage(
+        await writeScenario(directory, (scenario) => {
+          scenario.reset.verify = { kind: "json-array-empty", method: "GET", path: "https://evil.example/state" };
+        }, "absolute-verify.json"),
+        undefined,
+        env(token),
+        /authorized origin/,
+      );
+      await expectUsage(
+        await writeScenario(directory, (scenario) => {
+          scenario.reset.verify = { kind: "json-array-empty", method: "GET", path: "//evil.example/state" };
+        }, "protocol-relative.json"),
+        undefined,
+        env(token),
+        /authorized origin/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
 
@@ -181,12 +230,14 @@ async function writeScenario(
   directory: string,
   mutate: (scenario: {
     target: { origin?: string; appId?: string; resetAuthorization?: string };
+    reset: { verify?: { kind: string; method: string; path: string; command?: string } };
     steps: Array<{ id: string; kind: string; dependsOn: string[]; value?: string; command?: string; note?: string }>;
   }) => void,
   name = "scenario.json",
 ): Promise<string> {
   const scenario = JSON.parse(await readFile(EXAMPLE, "utf8")) as {
     target: { origin?: string; appId?: string; resetAuthorization?: string };
+    reset: { verify?: { kind: string; method: string; path: string; command?: string } };
     steps: Array<{ id: string; kind: string; dependsOn: string[]; value?: string; command?: string; note?: string }>;
   };
   mutate(scenario);

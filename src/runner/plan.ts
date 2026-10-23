@@ -1,4 +1,5 @@
 import { assertBudget } from "../core/budget.ts";
+import { cleanStateVerify } from "../core/clean-state.ts";
 import { assertScenario, findMissingDependencies, orderIds } from "../core/dependencies.ts";
 import { ScenarioError, type Scenario, type Step } from "../core/types.ts";
 import { assertLocalAuthorizedTarget, canonicalOrigin, resolveAuthorizedUrl } from "./safety.ts";
@@ -22,6 +23,7 @@ export function prepareReplay(scenario: Scenario, stepIds: readonly string[]): P
     resolveAuthorizedUrl(origin, scenario.oracle.request.path);
   }
   resolveAuthorizedUrl(origin, scenario.reset.path);
+  resolveAuthorizedUrl(origin, cleanStateVerify(scenario.reset).path);
   const ordered = orderIds(scenario.steps, stepIds);
   const missing = findMissingDependencies(scenario.steps, ordered);
   if (missing.length > 0) {

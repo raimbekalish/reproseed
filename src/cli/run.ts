@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 
+import { cleanStateVerify } from "../core/clean-state.ts";
 import type { MinimizeReport, MinimizeStatus, Scenario } from "../core/types.ts";
 import { exportPlaywrightTest } from "../export/playwright.ts";
 import { minimizeWithBrowser } from "../runner/minimize-browser.ts";
@@ -132,6 +133,7 @@ async function preflightTarget(scenario: Scenario): Promise<void> {
       origin: scenario.target.origin,
       expectedAppId: scenario.target.appId,
       resetAuthorization: scenario.target.resetAuthorization,
+      verify: cleanStateVerify(scenario.reset),
       signal: controller.signal,
     });
   } catch (error) {

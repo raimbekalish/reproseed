@@ -38,6 +38,12 @@ Scenario JSON is parsed as data. \${VAR} and $(command) text is not expanded or 
 When the file sets target.origin or target.appId, it must match the environment.
 The reset credential is read only from REPROSEED_RESET_AUTHORIZATION.
 
+Optional reset.verify selects the clean-state check. The supported rule is a same-origin
+GET whose JSON body is an empty array:
+  {"kind":"json-array-empty","method":"GET","path":"/api/search-history"}
+When verify is omitted, the check stays GET /api/records. The path cannot leave the
+loopback origin, and the file cannot supply a script or a shell command.
+
 Outputs stay inside the current directory. Symlinked output paths are refused.
 Existing files are left unchanged unless --force is set.
 A run that does not verify writes the report and does not write or replace the spec.

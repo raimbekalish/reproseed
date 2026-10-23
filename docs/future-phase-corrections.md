@@ -64,7 +64,13 @@ DOM comparison is defined in `src/runner/dom-text.ts`. The runner uses Playwrigh
 
 GET and POST delays share `route.fetch()`, the wait, and `route.fulfill()`. Matching lives in `src/runner/delay-match.ts`. POST substring matching on the path and query is unchanged. GET uses a boundary so one search query does not delay another. Control paths are never delayed.
 
-The exporter writes one spec shape for both oracles. It asserts the intended result. Five fresh verification replays are still required. The search app's reset still proves `GET /api/records` is an empty record list. That check is the local-target contract, not part of the search bug.
+The exporter writes one spec shape for both oracles. It asserts the intended result. Five fresh verification replays are still required. Phase 6 checked every app with `GET /api/records`. Phase 7A replaces that hardcoded path with `reset.verify`.
+
+## Phase 7A — declarative clean-state verification
+
+`reset.verify` is optional scenario data. The only supported rule is `{"kind":"json-array-empty","method":"GET","path":"/same-origin-path"}`. The runner, the CLI preflight, and the generated Playwright test all GET that path after the authorized reset and require a JSON array of length 0. Redirects and non-loopback paths are refused. The file cannot supply a script or a shell command.
+
+When `verify` is omitted, the check remains `GET /api/records`, so existing duplicate-submit scenarios stay valid. The stale-search scenario sets the path to `/api/search-history`, which is the server's list of accepted queries. That app no longer exposes a record list for the runner. Identity and reset authorization are unchanged.
 
 One measured minimization of `examples/stale-search/scenario.json` used 52 replay executions, 14 cache hits, and about 30 seconds. The scenario budget allows 80 replays and 180 seconds so a slower machine can finish the same search without raising the ceiling to the old 90-replay, six-minute draft.
 

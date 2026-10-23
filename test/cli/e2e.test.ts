@@ -412,6 +412,9 @@ describe("built reproseed cli", { concurrency: false }, () => {
       assert.equal(spec.includes(token), false);
       assert.equal(spec.includes(demo.origin), false);
       assert.match(spec, /Results for beta/);
+      assert.match(spec, /\/api\/search-history/);
+      assert.match(spec, /json-array-empty/);
+      assert.equal(spec.includes('"/api/records"'), false);
       assert.equal(spec.includes('toBe("Results for alpha")'), false);
       const artifact = JSON.parse(reportText) as SanitizedMinimizeArtifact;
       assert.equal(artifact.scenario.oracle.id, "dom-text");

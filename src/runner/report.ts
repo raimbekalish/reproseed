@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { cleanStateVerify } from "../core/clean-state.ts";
 import type { Budget, MinimizeReport, Oracle, Scenario, Step } from "../core/types.ts";
 
 const REDACTED = "[redacted]";
@@ -30,7 +31,11 @@ export function sanitizeArtifact(scenario: Scenario, report: MinimizeReport): Sa
         origin: scenario.target.origin,
         appId: scenario.target.appId,
       },
-      reset: { method: scenario.reset.method, path: scenario.reset.path },
+      reset: {
+        method: scenario.reset.method,
+        path: scenario.reset.path,
+        verify: cleanStateVerify(scenario.reset),
+      },
       steps: scenario.steps.map((step) => ({ id: step.id, kind: step.kind })),
       oracle: copyOracle(scenario.oracle),
       budget: { ...scenario.budget },

@@ -36,6 +36,7 @@ describe("playwright regression export", () => {
       [...CORE_IDS],
     );
     assert.deepEqual(embedded.oracle, { id: "record-count", path: "/api/records", email: "a@example.com", expect: 1 });
+    assert.deepEqual(embedded.verify, { kind: "json-array-empty", method: "GET", path: "/api/records" });
     const delay = embedded.steps.find((step) => step.id === "slow");
     assert.equal(delay?.kind, "delay");
     assert.equal(delay?.ms, 2000);
@@ -127,6 +128,25 @@ describe("playwright regression export", () => {
     const embedded = readEmbedded(source);
     assert.equal(embedded.steps.find((step) => step.id === "email")?.value, nasty);
     assertGeneratedSpecTypechecks(source);
+  });
+
+  it("embeds a declared clean-state path and refuses one that leaves the origin", () => {
+    const scenario = secretScenario();
+    scenario.reset = {
+      method: "POST",
+      path: "/__reproseed/reset",
+      verify: { kind: "json-array-empty", method: "GET", path: "/api/search-history" },
+    };
+    const source = exportPlaywrightTest(scenario, verifiedMinimizeReport(scenario, CORE_IDS));
+    assert.equal(readEmbedded(source).verify.path, "/api/search-history");
+    assert.match(source, /readJsonArray\(config\.origin, verify\.path\)/);
+    assert.equal(source.includes("const emptyListPath"), false);
+    scenario.reset = {
+      method: "POST",
+      path: "/__reproseed/reset",
+      verify: { kind: "json-array-empty", method: "GET", path: "https://evil.example/state" },
+    };
+    assert.throws(() => exportPlaywrightTest(scenario, verifiedMinimizeReport(scenario, CORE_IDS)), /authorized origin/);
   });
 
   it("typechecks the duplicate-submit spec", () => {
@@ -493,7 +513,8 @@ function secretScenario(): Scenario {
 }
 
 function readEmbedded(source: string): {
-  oracle: { id: string; path: string; email: string; expect: number };
+  oracle: { id: string; path?: string; email?: string; selector?: string; expect: number | string };
+  verify: { kind: string; method: string; path: string };
   steps: EmbeddedStep[];
 } {
   const marker = "const scenario = ";
@@ -505,7 +526,8 @@ function readEmbedded(source: string): {
   assert.notEqual(end, -1);
   const expression = source.slice(expressionStart, end);
   return vm.runInNewContext(expression, { JSON }) as {
-    oracle: { id: string; path: string; email: string; expect: number };
+    oracle: { id: string; path?: string; email?: string; selector?: string; expect: number | string };
+    verify: { kind: string; method: string; path: string };
     steps: EmbeddedStep[];
   };
 }

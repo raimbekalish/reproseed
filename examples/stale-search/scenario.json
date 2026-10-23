@@ -5,7 +5,12 @@
   },
   "reset": {
     "method": "POST",
-    "path": "/__reproseed/reset"
+    "path": "/__reproseed/reset",
+    "verify": {
+      "kind": "json-array-empty",
+      "method": "GET",
+      "path": "/api/search-history"
+    }
   },
   "steps": [
     { "id": "open", "kind": "goto", "path": "/", "dependsOn": [] },

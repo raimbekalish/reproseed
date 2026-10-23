@@ -3,14 +3,15 @@ import { resolve } from "node:path";
 
 import { assertBudget } from "../core/budget.ts";
 import { assertScenario } from "../core/dependencies.ts";
-import type { Budget, DelayedMethod, Oracle, ResetSpec, Scenario, Step } from "../core/types.ts";
+import type { Budget, DelayedMethod, JsonArrayEmptyVerify, Oracle, ResetSpec, Scenario, Step } from "../core/types.ts";
 import { assertLocalAuthorizedTarget, canonicalOrigin } from "../runner/safety.ts";
 import { CliError, EXIT } from "./errors.ts";
 
 const SCENARIO_BYTES = 1_000_000;
 const TOP_LEVEL = ["id", "target", "reset", "steps", "oracle", "budget"] as const;
 const TARGET_FIELDS = ["origin", "appId"] as const;
-const RESET_FIELDS = ["method", "path"] as const;
+const RESET_FIELDS = ["method", "path", "verify"] as const;
+const VERIFY_FIELDS = ["kind", "method", "path"] as const;
 const RECORD_ORACLE_FIELDS = ["id", "request", "match", "expect"] as const;
 const DOM_ORACLE_FIELDS = ["id", "selector", "expect"] as const;
 const BUDGET_FIELDS = [
@@ -147,7 +148,22 @@ function parseReset(value: unknown): ResetSpec {
   if (method !== "POST" || path !== "/__reproseed/reset") {
     throw new CliError("reset must be POST /__reproseed/reset", EXIT.usage);
   }
-  return { method: "POST", path: "/__reproseed/reset" };
+  if (!Object.hasOwn(record, "verify")) {
+    return { method: "POST", path: "/__reproseed/reset" };
+  }
+  return { method: "POST", path: "/__reproseed/reset", verify: parseVerify(record.verify) };
+}
+
+function parseVerify(value: unknown): JsonArrayEmptyVerify {
+  const record = objectRecord(value, "reset.verify");
+  rejectUnknown(record, VERIFY_FIELDS, "reset.verify");
+  const kind = requiredString(record, "kind", "reset.verify.kind");
+  const method = requiredString(record, "method", "reset.verify.method");
+  const path = requiredString(record, "path", "reset.verify.path");
+  if (kind !== "json-array-empty" || method !== "GET") {
+    throw new CliError("reset.verify must be a GET json-array-empty check", EXIT.usage);
+  }
+  return { kind: "json-array-empty", method: "GET", path };
 }
 
 function parseSteps(value: unknown): Step[] {
