@@ -1,6 +1,7 @@
-import { errors, type Browser, type BrowserContext } from "playwright";
+import { errors, type Browser, type BrowserContext, type Page } from "playwright";
 
 import type {
+  DomTextOracle,
   ExecutionOutcome,
   Probe,
   Scenario,
@@ -8,12 +9,12 @@ import type {
 } from "../core/types.ts";
 import { executeAction } from "./actions.ts";
 import { installMatchedResponseDelay, installOriginGuard, type ResponseDelay } from "./faults.ts";
-import { recordCountOutcome } from "./oracle.ts";
+import { domTextOutcome, recordCountOutcome } from "./oracle.ts";
 import { prepareReplay, type PreparedReplay } from "./plan.ts";
 import { readRecordList, resetAndConfirmEmpty, ResetFailed, type FetchLike } from "./reset.ts";
 import { assertPageStayed } from "./safety.ts";
 import { createBrowserPool, launchChromium, type BrowserPool } from "./session.ts";
-import { trackOriginRequests } from "./settle.ts";
+import { settleAnimationFrames, trackOriginRequests } from "./settle.ts";
 import {
   bounded,
   CLEANUP_BUDGET_MS,
@@ -181,18 +182,14 @@ async function executePrepared(
         });
       }
       await tracker.waitUntilSettled(controller.signal);
-      const records = await readRecordList({
+      outcome = await evaluateOracle({
+        page,
         origin,
-        path: scenario.oracle.request.path,
+        scenario,
         fetchImpl,
         signal: controller.signal,
-      });
-      const actual = records.filter((record) => record.email === scenario.oracle.match.value).length;
-      outcome = recordCountOutcome({
-        email: scenario.oracle.match.value,
-        actual,
-        expect: scenario.oracle.expect,
-        durationMs: Date.now() - startedAt,
+        startedAt,
+        timeoutMs,
       });
     } finally {
       tracker.dispose();
@@ -220,6 +217,67 @@ async function executePrepared(
     outcome = { ...outcome, durationMs: Math.max(0, Date.now() - startedAt) };
   }
   return outcome;
+}
+
+async function evaluateOracle(input: {
+  page: Page;
+  origin: string;
+  scenario: Scenario;
+  fetchImpl: FetchLike;
+  signal: AbortSignal;
+  startedAt: number;
+  timeoutMs: number;
+}): Promise<ExecutionOutcome> {
+  const oracle = input.scenario.oracle;
+  if (oracle.id === "record-count") {
+    const records = await readRecordList({
+      origin: input.origin,
+      path: oracle.request.path,
+      fetchImpl: input.fetchImpl,
+      signal: input.signal,
+    });
+    const actual = records.filter((record) => record.email === oracle.match.value).length;
+    return recordCountOutcome({
+      email: oracle.match.value,
+      actual,
+      expect: oracle.expect,
+      durationMs: Date.now() - input.startedAt,
+    });
+  }
+  assertPageStayed(input.page.url(), input.origin, false);
+  await settleAnimationFrames(input.page);
+  const actual = await readSingleText(input.page, oracle, Math.max(1, input.timeoutMs - (Date.now() - input.startedAt)));
+  return domTextOutcome({
+    selector: oracle.selector,
+    actual,
+    expect: oracle.expect,
+    durationMs: Date.now() - input.startedAt,
+  });
+}
+
+/**
+ * `locator.count()` does not wait, so a missing element is an error rather than a timeout.
+ * `textContent` is then read from that one element. The scenario does not supply a script.
+ */
+async function readSingleText(page: Page, oracle: DomTextOracle, timeout: number): Promise<string> {
+  const locator = page.locator(oracle.selector);
+  let count: number;
+  try {
+    count = await locator.count();
+  } catch (error) {
+    throw new Error(`oracle selector is invalid: ${oracle.selector} (${errorMessage(error)})`);
+  }
+  if (count === 0) {
+    throw new Error(`oracle selector matched no element: ${oracle.selector}`);
+  }
+  if (count !== 1) {
+    throw new Error(`oracle selector matched ${count} elements: ${oracle.selector}`);
+  }
+  const text = await locator.textContent({ timeout });
+  if (text === null) {
+    throw new Error(`oracle selector matched a detached element: ${oracle.selector}`);
+  }
+  return text;
 }
 
 function classifyFailure(

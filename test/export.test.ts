@@ -35,7 +35,7 @@ describe("playwright regression export", () => {
       embedded.steps.map((step) => step.id),
       [...CORE_IDS],
     );
-    assert.deepEqual(embedded.oracle, { path: "/api/records", email: "a@example.com", expect: 1 });
+    assert.deepEqual(embedded.oracle, { id: "record-count", path: "/api/records", email: "a@example.com", expect: 1 });
     const delay = embedded.steps.find((step) => step.id === "slow");
     assert.equal(delay?.kind, "delay");
     assert.equal(delay?.ms, 2000);
@@ -492,7 +492,10 @@ function secretScenario(): Scenario {
   return scenario;
 }
 
-function readEmbedded(source: string): { oracle: { path: string; email: string; expect: number }; steps: EmbeddedStep[] } {
+function readEmbedded(source: string): {
+  oracle: { id: string; path: string; email: string; expect: number };
+  steps: EmbeddedStep[];
+} {
   const marker = "const scenario = ";
   const start = source.indexOf(marker);
   assert.notEqual(start, -1);
@@ -502,7 +505,7 @@ function readEmbedded(source: string): { oracle: { path: string; email: string; 
   assert.notEqual(end, -1);
   const expression = source.slice(expressionStart, end);
   return vm.runInNewContext(expression, { JSON }) as {
-    oracle: { path: string; email: string; expect: number };
+    oracle: { id: string; path: string; email: string; expect: number };
     steps: EmbeddedStep[];
   };
 }

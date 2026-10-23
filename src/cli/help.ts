@@ -50,6 +50,9 @@ Exit codes:
   ${EXIT.budget}  The replay or wall-clock budget was exhausted.
   ${EXIT.internal}  The runner or an output write failed.
 
-The regression test asserts the intended record count. This command does not run it.
+The regression test asserts the scenario's intended result.
+A record-count oracle asserts the intended record count.
+A dom-text oracle asserts the intended element text.
+This command does not run the test.
 A failing test on the still-buggy application is not a minimization failure.
 `;

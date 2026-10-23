@@ -2,12 +2,17 @@ import type {
   DuplicateSignature,
   ExecutionOutcome,
   Signature,
+  TargetSignature,
 } from "./types.ts";
 
 export type ConfirmedClass = "pass" | "target" | "other" | "error" | "timeout";
 
 export function isDuplicateSignature(value: Signature): value is DuplicateSignature {
   return value.oracleId === "record-count";
+}
+
+export function isTargetSignature(value: Signature): value is TargetSignature {
+  return value.oracleId === "record-count" || value.oracleId === "dom-text";
 }
 
 export function signaturesEqual(left: Signature, right: Signature): boolean {
@@ -19,6 +24,13 @@ export function signaturesEqual(left: Signature, right: Signature): boolean {
       left.facts.email === right.facts.email &&
       left.facts.actual === right.facts.actual &&
       left.facts.expect === right.facts.expect
+    );
+  }
+  if (left.oracleId === "dom-text" && right.oracleId === "dom-text") {
+    return (
+      left.facts.selector === right.facts.selector &&
+      left.facts.expect === right.facts.expect &&
+      left.facts.actual === right.facts.actual
     );
   }
   if (left.oracleId === "runner" && right.oracleId === "runner") {
@@ -54,6 +66,15 @@ function isSignature(value: Signature | undefined): value is Signature {
       typeof value.facts.email === "string" &&
       Number.isFinite(value.facts.actual) &&
       Number.isFinite(value.facts.expect)
+    );
+  }
+  if (value.oracleId === "dom-text") {
+    return (
+      value.code === "DOM_MISMATCH" &&
+      typeof value.facts.selector === "string" &&
+      value.facts.selector.trim() !== "" &&
+      typeof value.facts.expect === "string" &&
+      typeof value.facts.actual === "string"
     );
   }
   return (
@@ -130,7 +151,7 @@ export function outcomeSignature(outcome: ExecutionOutcome): Signature | undefin
 }
 
 /** Timeouts and runner errors are never the target, even if a signature happens to match. */
-export function classifyOutcome(outcome: ExecutionOutcome, baseline: DuplicateSignature): ConfirmedClass {
+export function classifyOutcome(outcome: ExecutionOutcome, baseline: TargetSignature): ConfirmedClass {
   switch (outcome.status) {
     case "pass":
       return "pass";
@@ -139,9 +160,7 @@ export function classifyOutcome(outcome: ExecutionOutcome, baseline: DuplicateSi
     case "error":
       return "error";
     case "fail":
-      return isDuplicateSignature(outcome.signature) && signaturesEqual(outcome.signature, baseline)
-        ? "target"
-        : "other";
+      return isTargetSignature(outcome.signature) && signaturesEqual(outcome.signature, baseline) ? "target" : "other";
     default: {
       const unreachable: never = outcome;
       return unreachable;
@@ -149,8 +168,8 @@ export function classifyOutcome(outcome: ExecutionOutcome, baseline: DuplicateSi
   }
 }
 
-export function oracleFailureSignature(outcome: ExecutionOutcome): DuplicateSignature | undefined {
-  if (outcome.status !== "fail" || !isDuplicateSignature(outcome.signature)) {
+export function oracleFailureSignature(outcome: ExecutionOutcome): TargetSignature | undefined {
+  if (outcome.status !== "fail" || !isTargetSignature(outcome.signature)) {
     return undefined;
   }
   return outcome.signature;

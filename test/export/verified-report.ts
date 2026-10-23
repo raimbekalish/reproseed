@@ -4,18 +4,23 @@ import type { DuplicateSignature, ExecutionOutcome, MinimizeReport, Scenario } f
 export function verifiedMinimizeReport(
   scenario: Scenario,
   keptStepIds: readonly string[],
-  actual = scenario.oracle.expect + 1,
+  actual?: number,
 ): MinimizeReport {
-  if (actual === scenario.oracle.expect) {
+  if (scenario.oracle.id !== "record-count") {
+    throw new Error("verifiedMinimizeReport requires a record-count oracle");
+  }
+  const oracle = scenario.oracle;
+  const observed = actual ?? oracle.expect + 1;
+  if (observed === oracle.expect) {
     throw new Error("fixture failure must differ from the intended count");
   }
   const signature: DuplicateSignature = {
     oracleId: "record-count",
-    code: actual > scenario.oracle.expect ? "DUPLICATE" : "COUNT_MISMATCH",
+    code: observed > oracle.expect ? "DUPLICATE" : "COUNT_MISMATCH",
     facts: {
-      email: scenario.oracle.match.value,
-      actual,
-      expect: scenario.oracle.expect,
+      email: oracle.match.value,
+      actual: observed,
+      expect: oracle.expect,
     },
   };
   const inputStepIds = scenario.steps.map((step) => step.id);

@@ -33,6 +33,21 @@ export type RecordCountOracle = {
   expect: number;
 };
 
+/**
+ * Compare one element's text with `expect`.
+ * The runner reads `textContent`, normalizes whitespace, and requires an exact match.
+ * See `normalizeDomText` in src/runner/dom-text.ts. This is not a script and not HTML.
+ */
+export type DomTextOracle = {
+  id: "dom-text";
+  selector: string;
+  expect: string;
+};
+
+export type Oracle = RecordCountOracle | DomTextOracle;
+
+export type DelayedMethod = "GET" | "POST";
+
 type StepBase = {
   id: string;
   dependsOn: string[];
@@ -44,14 +59,16 @@ export type ClickStep = StepBase & { kind: "click"; selector: string };
 export type WaitStep = StepBase & { kind: "wait"; ms: number };
 
 /**
- * Delay the browser-visible response.
- * Future runner: `route.fetch()`, wait, `route.fulfill({ response })`.
+ * Delay the browser-visible response for one matching request.
+ * The runner uses `route.fetch()`, waits, then `route.fulfill({ response })`.
  * Waiting before `route.continue()` delays request dispatch instead.
+ * `method` selects POST or GET. The needle is matched against the path and query,
+ * not the origin, so unrelated requests stay on their normal timing.
  */
 export type DelayStep = StepBase & {
   kind: "delay";
   urlIncludes: string;
-  method: "POST";
+  method: DelayedMethod;
   ms: number;
 };
 
@@ -76,7 +93,7 @@ export type Scenario = {
   target: TargetApp;
   reset: ResetSpec;
   steps: Step[];
-  oracle: RecordCountOracle;
+  oracle: Oracle;
   budget: Budget;
 };
 
@@ -90,6 +107,23 @@ export type DuplicateSignature = {
   };
 };
 
+/**
+ * The actual text is part of the failure identity.
+ * A different rendered string is a different failure, even on the same selector.
+ */
+export type DomMismatchSignature = {
+  oracleId: "dom-text";
+  code: "DOM_MISMATCH";
+  facts: {
+    selector: string;
+    expect: string;
+    actual: string;
+  };
+};
+
+/** A failure the minimizer can treat as the target. Runner failures are not targets. */
+export type TargetSignature = DuplicateSignature | DomMismatchSignature;
+
 export type RunnerFailureSignature = {
   oracleId: "runner";
   code: "TIMEOUT" | "RUNNER_ERROR" | "RESET_FAILED";
@@ -98,7 +132,7 @@ export type RunnerFailureSignature = {
   };
 };
 
-export type Signature = DuplicateSignature | RunnerFailureSignature;
+export type Signature = TargetSignature | RunnerFailureSignature;
 
 export type ExecutionOutcome =
   | { status: "pass"; durationMs: number }
@@ -164,7 +198,7 @@ export type MinimizeReport = {
   limitations: string[];
   inputStepIds: string[];
   keptStepIds: string[];
-  baselineSignature?: DuplicateSignature;
+  baselineSignature?: TargetSignature;
   counts: {
     replayExecutions: number;
     candidateEvaluations: number;

@@ -14,7 +14,7 @@ import {
   type BudgetExhaustedReason,
   type CandidateClass,
   type CandidateEvaluation,
-  type DuplicateSignature,
+  type TargetSignature,
   type EvaluationSource,
   type ExecutionOutcome,
   type MinimizeInput,
@@ -138,7 +138,7 @@ class Search {
   cacheHits = 0;
   exhausted = false;
   exhaustedReason: BudgetExhaustedReason | undefined;
-  baselineSignature: DuplicateSignature | undefined;
+  baselineSignature: TargetSignature | undefined;
   private deletionRound = 0;
 
   constructor(input: MinimizeInput) {
@@ -404,7 +404,7 @@ class Search {
     }
   }
 
-  private requireBaseline(): DuplicateSignature {
+  private requireBaseline(): TargetSignature {
     if (this.baselineSignature === undefined) {
       throw new ScenarioError("candidate evaluation started before a baseline signature existed");
     }
@@ -456,7 +456,7 @@ class Search {
 
 function decideBaseline(
   samples: readonly ReplayExecution[],
-): { kind: "target"; signature: DuplicateSignature } | { kind: "flaky" } | { kind: "none" } {
+): { kind: "target"; signature: TargetSignature } | { kind: "flaky" } | { kind: "none" } {
   const first = samples[0];
   if (first === undefined) {
     return { kind: "none" };

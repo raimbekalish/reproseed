@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { classifyOutcome, signaturesEqual } from "../src/core/signature.ts";
+import type { DomMismatchSignature } from "../src/core/types.ts";
 import { duplicateSignature } from "./fixture.ts";
+
+const DOM_ALPHA: DomMismatchSignature = {
+  oracleId: "dom-text",
+  code: "DOM_MISMATCH",
+  facts: { selector: "#results", expect: "Results for beta", actual: "Results for alpha" },
+};
 
 describe("signatures", () => {
   it("matches duplicate failures only when the facts match", () => {
@@ -51,5 +58,27 @@ describe("signatures", () => {
       "error",
     );
     assert.equal(classifyOutcome({ status: "pass", durationMs: 1 }, baseline), "pass");
+  });
+
+  it("treats a different DOM result as a different failure", () => {
+    const other: DomMismatchSignature = {
+      oracleId: "dom-text",
+      code: "DOM_MISMATCH",
+      facts: { selector: "#results", expect: "Results for beta", actual: "Results for gamma" },
+    };
+    const moved: DomMismatchSignature = {
+      oracleId: "dom-text",
+      code: "DOM_MISMATCH",
+      facts: { selector: "#status", expect: "Results for beta", actual: "Results for alpha" },
+    };
+    assert.equal(signaturesEqual(DOM_ALPHA, DOM_ALPHA), true);
+    assert.equal(signaturesEqual(DOM_ALPHA, other), false);
+    assert.equal(signaturesEqual(DOM_ALPHA, moved), false);
+    assert.equal(signaturesEqual(DOM_ALPHA, duplicateSignature(2)), false);
+    assert.equal(classifyOutcome({ status: "fail", durationMs: 1, signature: DOM_ALPHA }, DOM_ALPHA), "target");
+    assert.equal(classifyOutcome({ status: "fail", durationMs: 1, signature: other }, DOM_ALPHA), "other");
+    assert.equal(classifyOutcome({ status: "fail", durationMs: 1, signature: duplicateSignature(2) }, DOM_ALPHA), "other");
+    assert.equal(classifyOutcome({ status: "timeout", durationMs: 1 }, DOM_ALPHA), "timeout");
+    assert.equal(classifyOutcome({ status: "pass", durationMs: 1 }, DOM_ALPHA), "pass");
   });
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { assertScenario, findMissingDependencies, orderIds } from "../src/core/dependencies.ts";
-import { ScenarioError, type Step } from "../src/core/types.ts";
+import { ScenarioError, type Scenario, type Step } from "../src/core/types.ts";
 import { duplicateSubmitScenario, duplicateSubmitSteps } from "./fixture.ts";
 
 describe("dependencies", () => {
@@ -43,5 +43,34 @@ describe("dependencies", () => {
 
     const self: Step[] = [{ id: "a", kind: "click", selector: "#a", dependsOn: ["a"] }];
     assert.throws(() => assertScenario({ ...scenario, steps: self }), /depends on itself/);
+  });
+
+  it("accepts a DOM-text oracle and a GET response delay", () => {
+    const scenario = duplicateSubmitScenario();
+    const dom: Scenario = {
+      ...scenario,
+      steps: [
+        { id: "open", kind: "goto", path: "/", dependsOn: [] },
+        {
+          id: "slow-alpha",
+          kind: "delay",
+          urlIncludes: "/api/search?q=alpha",
+          method: "GET",
+          ms: 800,
+          dependsOn: [],
+        },
+      ],
+      oracle: { id: "dom-text", selector: "#results", expect: "Results for beta" },
+    };
+    assert.doesNotThrow(() => assertScenario(dom));
+    assert.throws(() => assertScenario({ ...dom, oracle: { id: "dom-text", selector: "javascript:alert(1)", expect: "x" } }), /javascript/);
+    assert.throws(
+      () =>
+        assertScenario({
+          ...dom,
+          steps: [{ id: "slow", kind: "delay", urlIncludes: "/api/search", method: "PUT" as "GET", ms: 10, dependsOn: [] }],
+        }),
+      /GET or POST/,
+    );
   });
 });

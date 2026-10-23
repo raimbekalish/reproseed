@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BrowserContext, Route } from "playwright";
 
+import { requestMatchesDelay } from "./delay-match.ts";
 import { canonicalOrigin, sameAuthorizedOrigin } from "./safety.ts";
 import { sleep } from "./timing.ts";
 
@@ -12,22 +13,26 @@ export type ResponseDelay = {
 };
 
 /**
- * Holds the browser-visible response after the server has processed the POST.
+ * Holds the browser-visible response after the server has processed the request.
  * `route.fetch()` performs the real request. The wait happens before
  * `route.fulfill({ response })`. Each matching request is delayed on its own
- * so overlapping submits do not share one response.
+ * so overlapping calls do not share one response. GET and POST use this same
+ * path; `requestMatchesDelay` decides which requests are held.
  */
 export async function installMatchedResponseDelay(
   context: BrowserContext,
   input: {
     origin: string;
     urlIncludes: string;
-    method: "POST";
+    method: "GET" | "POST";
     ms: number;
     signal?: AbortSignal;
+    onDelayed?: () => void;
+    /** @deprecated Use `onDelayed`. Still invoked for existing POST callers. */
     onDelayedPost?: () => void;
   },
 ): Promise<ResponseDelay> {
+  const origin = canonicalOrigin(input.origin);
   const marker = randomUUID();
   const localController = new AbortController();
   const abortFromParent = (): void => {
@@ -44,7 +49,15 @@ export async function installMatchedResponseDelay(
 
   const handler = async (route: Route): Promise<void> => {
     try {
-      if (!matchesDelayedRequest(route, input)) {
+      if (
+        !requestMatchesDelay({
+          method: route.request().method(),
+          url: route.request().url(),
+          origin,
+          urlIncludes: input.urlIncludes,
+          delayMethod: input.method,
+        })
+      ) {
         await route.fallback();
         return;
       }
@@ -64,6 +77,7 @@ export async function installMatchedResponseDelay(
           signal: localController.signal,
           timeout: 0,
         });
+        input.onDelayed?.();
         input.onDelayedPost?.();
         await sleep(input.ms, localController.signal);
         if (localController.signal.aborted) {
@@ -183,14 +197,3 @@ function forwardedHeaders(headers: Record<string, string>, marker: string): Reco
   return forwarded;
 }
 
-function matchesDelayedRequest(
-  route: Route,
-  input: { origin: string; urlIncludes: string; method: "POST" },
-): boolean {
-  const request = route.request();
-  if (request.method() !== input.method) {
-    return false;
-  }
-  const url = request.url();
-  return sameAuthorizedOrigin(url, input.origin) && url.includes(input.urlIncludes);
-}

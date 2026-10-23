@@ -10,6 +10,7 @@ import vm from "node:vm";
 
 import { fetchRecords } from "../../examples/duplicate-submit/harness.ts";
 import { startDemoServer, type DemoPage } from "../../examples/duplicate-submit/server.ts";
+import { startSearchServer, type SearchPage } from "../../examples/stale-search/server.ts";
 import { EXIT } from "../../src/cli/errors.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
 import { CORE_IDS, TARGET_SIGNATURE } from "../fixture.ts";
@@ -17,6 +18,7 @@ import { CORE_IDS, TARGET_SIGNATURE } from "../fixture.ts";
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const NODE_MODULES = join(REPO, "node_modules");
 const EXAMPLE = join(REPO, "examples/duplicate-submit/scenario.json");
+const STALE_EXAMPLE = join(REPO, "examples/stale-search/scenario.json");
 const PLAYWRIGHT = join(NODE_MODULES, "@playwright/test/cli.js");
 const APP_ID = "duplicate-submit";
 const VERSION = (JSON.parse(await readFile(join(REPO, "package.json"), "utf8")) as { version: string }).version;
@@ -43,6 +45,14 @@ describe("built reproseed cli", { concurrency: false }, () => {
       const copiedRuntime = await readFile(join(root, "pkg/dist/export/runtime-config.ts"), "utf8");
       const sourceRuntime = await readFile(join(REPO, "src/export/runtime-config.ts"), "utf8");
       assert.equal(copiedRuntime, sourceRuntime);
+      assert.equal(
+        await readFile(join(root, "pkg/dist/export/delay-match.ts"), "utf8"),
+        await readFile(join(REPO, "src/runner/delay-match.ts"), "utf8"),
+      );
+      assert.equal(
+        await readFile(join(root, "pkg/dist/export/dom-text.ts"), "utf8"),
+        await readFile(join(REPO, "src/runner/dom-text.ts"), "utf8"),
+      );
       await assert.rejects(access(join(root, "pkg/src/cli.ts")));
       const help = await runCli(cli, ["--help"], { cwd: work, env: baseEnv(), timeout: 30_000 });
       assert.equal(help.code, EXIT.verified, help.stderr);
@@ -359,6 +369,110 @@ describe("built reproseed cli", { concurrency: false }, () => {
     }
     assert.deepEqual(leaked, []);
   });
+
+  it("minimizes the stale-search scenario from the built CLI", { timeout: 720_000 }, async () => {
+    const token = randomBytes(16).toString("hex");
+    const before = await browserPids();
+    const demo = await startSearchServer({ port: 0, appId: "stale-search", resetAuthorization: token });
+    const work = await mkdtemp(join(tmpdir(), "reproseed-stale-e2e-"));
+    let leaked: number[] = [];
+    try {
+      await symlink(NODE_MODULES, join(work, "node_modules"));
+      const result = await runCli(
+        cli,
+        ["minimize", STALE_EXAMPLE, "--report", "artifacts/report.json", "--spec", "artifacts/stale-search.spec.ts"],
+        {
+          cwd: work,
+          env: {
+            ...baseEnv(),
+            REPROSEED_ORIGIN: demo.origin,
+            REPROSEED_APP_ID: "stale-search",
+            REPROSEED_RESET_AUTHORIZATION: token,
+          },
+          timeout: 540_000,
+          token,
+        },
+      );
+      assert.equal(result.code, EXIT.verified, `${result.stdout}\n${result.stderr}`);
+      assert.equal(result.stdout.includes(token), false);
+      assert.equal(result.stderr.includes(token), false);
+      assert.match(result.stdout, /Status: verified-one-minimal/);
+      assert.match(
+        result.stdout,
+        /Failure: DOM_MISMATCH \(selector=#results, expect="Results for beta", actual="Results for alpha \(outdated\)"\)/,
+      );
+      assert.match(result.stdout, /verify: 5/);
+      assert.match(result.stdout, /intended result text/);
+      console.log(result.stdout);
+      const specPath = join(work, "artifacts/stale-search.spec.ts");
+      const reportText = await readFile(join(work, "artifacts/report.json"), "utf8");
+      const spec = await readFile(specPath, "utf8");
+      assert.equal(reportText.includes(token), false);
+      assert.equal(reportText.includes("resetAuthorization"), false);
+      assert.equal(spec.includes(token), false);
+      assert.equal(spec.includes(demo.origin), false);
+      assert.match(spec, /Results for beta/);
+      assert.equal(spec.includes('toBe("Results for alpha")'), false);
+      const artifact = JSON.parse(reportText) as SanitizedMinimizeArtifact;
+      assert.equal(artifact.scenario.oracle.id, "dom-text");
+      assert.ok(artifact.report.keptStepIds.length < artifact.report.inputStepIds.length);
+      assert.equal(artifact.report.counts.verifyReplays, 5);
+      assert.equal(artifact.report.baselineSignature?.code, "DOM_MISMATCH");
+      console.log(
+        JSON.stringify(
+          {
+            kept: artifact.report.keptStepIds,
+            removed: artifact.report.inputStepIds.filter((id) => !artifact.report.keptStepIds.includes(id)),
+            counts: artifact.report.counts,
+            elapsedMs: artifact.report.budget.elapsedMs,
+          },
+          null,
+          2,
+        ),
+      );
+
+      await writeFile(
+        join(work, "playwright.stale.config.ts"),
+        `import { defineConfig } from "@playwright/test";
+export default defineConfig({
+  testDir: ${JSON.stringify(join(work, "artifacts"))},
+  testMatch: "stale-search.spec.ts",
+  respectGitIgnore: false,
+  outputDir: ${JSON.stringify(join(work, "playwright-output-stale"))},
+  retries: 0,
+  workers: 1,
+  fullyParallel: false,
+  timeout: 60_000,
+  reporter: "line",
+  use: { headless: true, trace: "off", video: "off", screenshot: "off" },
+});
+`,
+      );
+      const red = await runSearchSpec(work, "buggy", token);
+      assert.equal(await readFile(specPath, "utf8"), spec);
+      assert.equal(red.code, 1, red.output);
+      assert.match(red.output, /Expected:\s*"Results for beta"/);
+      assert.match(red.output, /Received:\s*"Results for alpha \(outdated\)"/);
+      assert.equal(red.output.includes(token), false);
+      const green = await runSearchSpec(work, "fixed-generation", token);
+      assert.equal(await readFile(specPath, "utf8"), spec);
+      assert.equal(green.code, 0, green.output);
+      assert.match(green.output, /1 passed/);
+      assert.equal(green.output.includes(token), false);
+    } finally {
+      await demo.close();
+      leaked = await waitForBrowsers(before);
+      for (const pid of leaked) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // The process already exited.
+        }
+      }
+      await rm(work, { recursive: true, force: true });
+    }
+    assert.deepEqual(leaked, []);
+  });
 });
 
 function baseEnv(): NodeJS.ProcessEnv {
@@ -518,6 +632,44 @@ async function runAgainst(work: string, page: DemoPage, token: string): Promise<
       postCount: demo.postCount(),
       records: records.map((record) => ({ email: record.email })),
     };
+  } finally {
+    await demo.close();
+  }
+}
+
+async function runSearchSpec(work: string, page: SearchPage, token: string): Promise<{ code: number; output: string }> {
+  const demo = await startSearchServer({ port: 0, appId: "stale-search", resetAuthorization: token, page });
+  try {
+    return await new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [PLAYWRIGHT, "test", "--config", "playwright.stale.config.ts", "--retries=0", "--workers=1"],
+        {
+          cwd: work,
+          env: {
+            ...baseEnv(),
+            REPROSEED_ORIGIN: demo.origin,
+            REPROSEED_APP_ID: "stale-search",
+            REPROSEED_RESET_AUTHORIZATION: token,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      const chunks: Buffer[] = [];
+      child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+      child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, 90_000);
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once("close", (code) => {
+        clearTimeout(timer);
+        resolve({ code: code ?? 1, output: stripAnsi(Buffer.concat(chunks).toString("utf8")) });
+      });
+    });
   } finally {
     await demo.close();
   }

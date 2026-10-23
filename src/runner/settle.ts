@@ -57,3 +57,20 @@ export function trackOriginRequests(page: Page, origin: string): RequestTracker 
     },
   };
 }
+
+/**
+ * Gives a fetch callback time to write textContent after the response is delivered.
+ * The network is already quiet. Two timers let the response JSON callback run first.
+ */
+export async function settleAnimationFrames(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          setTimeout(() => {
+            resolve();
+          }, 0);
+        }, 0);
+      }),
+  );
+}

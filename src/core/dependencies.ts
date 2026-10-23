@@ -1,4 +1,4 @@
-import { ScenarioError, type Scenario, type Step } from "./types.ts";
+import { ScenarioError, type Oracle, type Scenario, type Step } from "./types.ts";
 
 const STEP_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
@@ -44,8 +44,8 @@ function assertStepShape(step: Step): void {
       break;
     case "delay":
       assertNonEmpty(`${step.id} urlIncludes`, step.urlIncludes);
-      if (step.method !== "POST") {
-        throw new ScenarioError(`step ${step.id} delay method must be POST`);
+      if (step.method !== "GET" && step.method !== "POST") {
+        throw new ScenarioError(`step ${step.id} delay method must be GET or POST`);
       }
       if (!Number.isFinite(step.ms) || step.ms <= 0) {
         throw new ScenarioError(`step ${step.id} delay must be a positive number`);
@@ -89,6 +89,53 @@ function assertNoCycles(steps: readonly Step[]): void {
   }
 }
 
+function assertOracle(oracle: Oracle): void {
+  if (oracle.id === "record-count") {
+    if (oracle.request.method !== "GET") {
+      throw new ScenarioError("oracle must be a GET record-count check");
+    }
+    assertNonEmpty("oracle path", oracle.request.path);
+    if (oracle.match.field !== "email") {
+      throw new ScenarioError("oracle match field must be email");
+    }
+    assertNonEmpty("oracle email", oracle.match.value);
+    if (!Number.isSafeInteger(oracle.expect) || oracle.expect < 0) {
+      throw new ScenarioError("oracle.expect must be a non-negative integer");
+    }
+    return;
+  }
+  if (oracle.id === "dom-text") {
+    assertDomSelector(oracle.selector);
+    if (oracle.expect.length > 2_000) {
+      throw new ScenarioError("oracle.expect is too long");
+    }
+    if (oracle.expect.includes("\0")) {
+      throw new ScenarioError("oracle.expect must not contain a null character");
+    }
+    return;
+  }
+  const unreachable: never = oracle;
+  throw new ScenarioError(`unknown oracle ${(unreachable as { id?: string }).id ?? ""}`);
+}
+
+function assertDomSelector(selector: string): void {
+  if (selector.trim() === "") {
+    throw new ScenarioError("oracle selector is required");
+  }
+  if (selector !== selector.trim()) {
+    throw new ScenarioError("oracle selector must not have leading or trailing whitespace");
+  }
+  if (selector.length > 300) {
+    throw new ScenarioError("oracle selector is too long");
+  }
+  if (/[\u0000-\u001f\u007f]/.test(selector)) {
+    throw new ScenarioError("oracle selector must not contain control characters");
+  }
+  if (/javascript\s*:/i.test(selector)) {
+    throw new ScenarioError("oracle selector must not be a javascript URL");
+  }
+}
+
 /** Validates scenario structure. Budget limits are checked separately. */
 export function assertScenario(scenario: Scenario): void {
   assertNonEmpty("scenario id", scenario.id);
@@ -106,17 +153,7 @@ export function assertScenario(scenario: Scenario): void {
   if (scenario.reset.method !== "POST" || scenario.reset.path !== "/__reproseed/reset") {
     throw new ScenarioError("reset must be POST /__reproseed/reset");
   }
-  if (scenario.oracle.id !== "record-count" || scenario.oracle.request.method !== "GET") {
-    throw new ScenarioError("oracle must be a GET record-count check");
-  }
-  assertNonEmpty("oracle path", scenario.oracle.request.path);
-  if (scenario.oracle.match.field !== "email") {
-    throw new ScenarioError("oracle match field must be email");
-  }
-  assertNonEmpty("oracle email", scenario.oracle.match.value);
-  if (!Number.isSafeInteger(scenario.oracle.expect) || scenario.oracle.expect < 0) {
-    throw new ScenarioError("oracle.expect must be a non-negative integer");
-  }
+  assertOracle(scenario.oracle);
   if (scenario.steps.length === 0) {
     throw new ScenarioError("scenario has no steps");
   }

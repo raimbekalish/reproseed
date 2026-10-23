@@ -6,30 +6,45 @@ import type { MinimizeReport, Scenario, Step } from "../core/types.ts";
 import { embedJson } from "./embed.ts";
 import { selectVerifiedExport } from "./eligibility.ts";
 import { ExportError } from "./export-error.ts";
-import { renderPlaywrightSpec } from "./spec-template.ts";
+import { DOM_TEXT_ASSERTION, DOM_TEXT_HELPERS, RECORD_COUNT_ASSERTION, renderPlaywrightSpec } from "./spec-template.ts";
 
 type ExportStep =
   | { id: string; kind: "goto"; path: string }
   | { id: string; kind: "fill"; selector: string; value: string }
   | { id: string; kind: "click"; selector: string }
   | { id: string; kind: "wait"; ms: number }
-  | { id: string; kind: "delay"; urlIncludes: string; method: "POST"; ms: number };
+  | { id: string; kind: "delay"; urlIncludes: string; method: "GET" | "POST"; ms: number };
+
+type ExportOracle =
+  | { id: "record-count"; path: string; email: string; expect: number }
+  | { id: "dom-text"; selector: string; expect: string };
 
 type ExportData = {
-  oracle: { path: string; email: string; expect: number };
+  oracle: ExportOracle;
   steps: ExportStep[];
 };
 
 /**
  * Builds a standalone Playwright spec from the original scenario and a verified report.
  * The sanitized report only has step ids and kinds. Selectors, values, and delays come from `scenario`.
- * The spec asserts `oracle.expect`. It does not assert the observed failure count.
+ * The spec asserts the oracle's intended result. It does not assert the observed failure.
  */
 export function exportPlaywrightTest(scenario: Scenario, report: MinimizeReport): string {
   const selected = selectVerifiedExport(scenario, report);
+  const dom = scenario.oracle.id === "dom-text";
   const source = renderPlaywrightSpec({
-    runtimeSource: readRuntimeSource(),
+    runtimeSource: readEmbeddedSource("runtime-config.ts", [new URL("./runtime-config.ts", import.meta.url)]),
+    delayMatchSource: readEmbeddedSource("delay-match.ts", [
+      new URL("./delay-match.ts", import.meta.url),
+      new URL("../runner/delay-match.ts", import.meta.url),
+    ]),
+    domTextSource: readEmbeddedSource("dom-text.ts", [
+      new URL("./dom-text.ts", import.meta.url),
+      new URL("../runner/dom-text.ts", import.meta.url),
+    ]),
     dataExpression: embedJson(exportData(scenario, selected.steps)),
+    assertionSource: dom ? DOM_TEXT_ASSERTION : RECORD_COUNT_ASSERTION,
+    helperSource: dom ? DOM_TEXT_HELPERS : "",
     expectCount: String(selected.expectCount),
     timeoutMs: String(selected.timeoutMs),
   });
@@ -47,12 +62,21 @@ export { ExportError } from "./export-error.ts";
 
 function exportData(scenario: Scenario, steps: readonly Step[]): ExportData {
   return {
-    oracle: {
-      path: scenario.oracle.request.path,
-      email: scenario.oracle.match.value,
-      expect: scenario.oracle.expect,
-    },
+    oracle: exportOracle(scenario),
     steps: steps.map(exportStep),
+  };
+}
+
+function exportOracle(scenario: Scenario): ExportOracle {
+  const oracle = scenario.oracle;
+  if (oracle.id === "dom-text") {
+    return { id: "dom-text", selector: oracle.selector, expect: oracle.expect };
+  }
+  return {
+    id: "record-count",
+    path: oracle.request.path,
+    email: oracle.match.value,
+    expect: oracle.expect,
   };
 }
 
@@ -67,10 +91,10 @@ function exportStep(step: Step): ExportStep {
     case "wait":
       return { id: step.id, kind: "wait", ms: step.ms };
     case "delay":
-      if (step.method !== "POST") {
+      if (step.method !== "GET" && step.method !== "POST") {
         throw new ExportError(`unsupported delay method for ${step.id}`);
       }
-      return { id: step.id, kind: "delay", urlIncludes: step.urlIncludes, method: "POST", ms: step.ms };
+      return { id: step.id, kind: "delay", urlIncludes: step.urlIncludes, method: step.method, ms: step.ms };
     default: {
       const unsupported = step as { id?: string; kind?: string };
       throw new ExportError(`unsupported step ${unsupported.kind ?? unsupported.id ?? "unknown"}`);
@@ -79,25 +103,34 @@ function exportStep(step: Step): ExportStep {
 }
 
 /**
- * The generated spec embeds this TypeScript source.
- * The build copies `runtime-config.ts` next to the compiled exporter so the
- * CLI does not need the original `src/` tree at runtime.
+ * The generated spec embeds these TypeScript sources.
+ * The build copies them next to the compiled exporter so the CLI does not need
+ * the original `src/` tree at runtime. Source checkouts still read `src/runner`.
  */
-function readRuntimeSource(): string {
-  const url = new URL("./runtime-config.ts", import.meta.url);
-  let source: string;
-  try {
-    source = readFileSync(url, "utf8");
-  } catch (error) {
-    const code = error instanceof Error && "code" in error ? String(error.code) : "";
-    throw new ExportError(
-      code === "ENOENT" ? "embedded runtime config is missing from the package" : "embedded runtime config could not be read",
-    );
+function readEmbeddedSource(filename: string, candidates: readonly URL[]): string {
+  let missing = true;
+  for (const url of candidates) {
+    try {
+      const source = readFileSync(url, "utf8");
+      if (/(^|\n)\s*import\s|require\s*\(/.test(source)) {
+        throw new ExportError(`embedded ${filename} must stay free of imports`);
+      }
+      return source;
+    } catch (error) {
+      if (error instanceof ExportError) {
+        throw error;
+      }
+      const code = error instanceof Error && "code" in error ? String(error.code) : "";
+      if (code !== "ENOENT") {
+        throw new ExportError(`embedded ${filename} could not be read`);
+      }
+      missing = true;
+    }
   }
-  if (/(^|\n)\s*import\s|require\s*\(/.test(source)) {
-    throw new ExportError("embedded runtime config must stay free of imports");
+  if (missing) {
+    throw new ExportError(`embedded ${filename} is missing from the package`);
   }
-  return source;
+  throw new ExportError(`embedded ${filename} could not be read`);
 }
 
 function assertSpecDoesNotLeak(scenario: Scenario, source: string): void {

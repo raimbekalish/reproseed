@@ -11,6 +11,7 @@ import { loadScenarioFile } from "../../src/cli/scenario-file.ts";
 import { duplicateSubmitSteps } from "../fixture.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/duplicate-submit/scenario.json", import.meta.url));
+const STALE = fileURLToPath(new URL("../../examples/stale-search/scenario.json", import.meta.url));
 
 describe("scenario file", () => {
   it("loads the duplicate-submit example and keeps the reset credential out of JSON", async () => {
@@ -121,6 +122,12 @@ describe("scenario file", () => {
       delete omitted.REPROSEED_RESET_AUTHORIZATION;
       await expectUsage(EXAMPLE, undefined, omitted, /REPROSEED_RESET_AUTHORIZATION is required/);
       await expectUsage(EXAMPLE, undefined, { ...env(token), REPROSEED_ORIGIN: "http://example.com" }, /non-loopback/);
+      await expectUsage(
+        STALE,
+        undefined,
+        { ...env(token), REPROSEED_APP_ID: "duplicate-submit", REPROSEED_ORIGIN: "http://127.0.0.1:4020" },
+        /does not match target.appId/,
+      );
       await expectUsage(EXAMPLE, undefined, { ...env(token), REPROSEED_APP_ID: "other-app" }, /does not match target.appId/);
       await expectUsage(
         await writeScenario(directory, (scenario) => {
@@ -133,6 +140,32 @@ describe("scenario file", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("loads the stale-search example as a DOM-text scenario", async () => {
+    const token = randomBytes(16).toString("hex");
+    const text = await readFile(STALE, "utf8");
+    assert.equal(text.includes("resetAuthorization"), false);
+    assert.equal(text.includes("keptStepIds"), false);
+    const scenario = await loadScenarioFile(STALE, tmpdir(), {
+      REPROSEED_ORIGIN: "http://127.0.0.1:4020",
+      REPROSEED_APP_ID: "stale-search",
+      REPROSEED_RESET_AUTHORIZATION: token,
+    });
+    assert.equal(scenario.id, "stale-search");
+    assert.equal(scenario.target.resetAuthorization, token);
+    assert.equal(scenario.oracle.id, "dom-text");
+    if (scenario.oracle.id === "dom-text") {
+      assert.equal(scenario.oracle.selector, "#results");
+      assert.equal(scenario.oracle.expect, "Results for beta");
+    }
+    const delay = scenario.steps.find((step) => step.id === "slow-alpha");
+    assert.equal(delay?.kind, "delay");
+    if (delay?.kind === "delay") {
+      assert.equal(delay.method, "GET");
+      assert.equal(delay.urlIncludes, "/api/search?q=alpha");
+    }
+    assert.ok(scenario.steps.length > 6);
   });
 });
 

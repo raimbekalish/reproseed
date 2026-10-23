@@ -1,0 +1,42 @@
+{
+  "id": "stale-search",
+  "target": {
+    "appId": "stale-search"
+  },
+  "reset": {
+    "method": "POST",
+    "path": "/__reproseed/reset"
+  },
+  "steps": [
+    { "id": "open", "kind": "goto", "path": "/", "dependsOn": [] },
+    { "id": "preview", "kind": "click", "selector": "#preview", "dependsOn": ["open"] },
+    { "id": "query-alpha", "kind": "fill", "selector": "#query", "value": "alpha", "dependsOn": ["open"] },
+    { "id": "note", "kind": "fill", "selector": "#note", "value": "unrelated", "dependsOn": ["open"] },
+    { "id": "decoy-wait", "kind": "wait", "ms": 40, "dependsOn": [] },
+    {
+      "id": "slow-alpha",
+      "kind": "delay",
+      "urlIncludes": "/api/search?q=alpha",
+      "method": "GET",
+      "ms": 800,
+      "dependsOn": []
+    },
+    { "id": "search-alpha", "kind": "click", "selector": "#search", "dependsOn": ["open", "query-alpha"] },
+    { "id": "gap", "kind": "wait", "ms": 300, "dependsOn": [] },
+    { "id": "query-beta", "kind": "fill", "selector": "#query", "value": "beta", "dependsOn": ["open"] },
+    { "id": "search-beta", "kind": "click", "selector": "#search", "dependsOn": ["open", "query-beta"] }
+  ],
+  "oracle": {
+    "id": "dom-text",
+    "selector": "#results",
+    "expect": "Results for beta"
+  },
+  "budget": {
+    "maxReplayExecutions": 80,
+    "maxWallClockMs": 180000,
+    "attemptTimeoutMs": 15000,
+    "baselineRuns": 3,
+    "reductionConfirmRuns": 2,
+    "verifyRuns": 5
+  }
+}

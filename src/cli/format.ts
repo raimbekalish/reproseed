@@ -1,4 +1,4 @@
-import type { MinimizeReport, MinimizeStatus } from "../core/types.ts";
+import type { MinimizeReport, MinimizeStatus, TargetSignature } from "../core/types.ts";
 import { EXIT, type ExitCode } from "./errors.ts";
 
 export function exitCodeForStatus(status: MinimizeStatus): ExitCode {
@@ -24,18 +24,13 @@ export function formatSummary(input: {
   specPath: string | undefined;
 }): string {
   const removed = input.report.inputStepIds.filter((id) => !input.report.keptStepIds.includes(id));
-  const signature = input.report.baselineSignature;
-  const failure =
-    signature === undefined
-      ? "none"
-      : `${signature.code} (email=${signature.facts.email}, actual=${signature.facts.actual}, expect=${signature.facts.expect})`;
   const lines = [
     `Status: ${input.report.status}`,
     `Result: ${input.report.claim}`,
     `Original steps: ${input.report.inputStepIds.length}`,
     `Kept steps: ${input.report.keptStepIds.length}`,
     `Removed steps: ${removed.length === 0 ? "none" : removed.join(", ")}`,
-    `Failure: ${failure}`,
+    `Failure: ${formatFailure(input.report.baselineSignature)}`,
     `Replay executions: ${input.report.counts.replayExecutions}`,
     `  baseline: ${input.report.counts.baselineReplays}`,
     `  search: ${input.report.counts.searchReplays}`,
@@ -47,9 +42,23 @@ export function formatSummary(input: {
     `Test: ${input.specPath ?? "not written"}`,
   ];
   if (input.specPath !== undefined) {
-    lines.push("The regression test asserts the intended record count. This command does not run it.");
+    lines.push(
+      input.report.baselineSignature?.oracleId === "dom-text"
+        ? "The regression test asserts the intended result text. This command does not run it."
+        : "The regression test asserts the intended record count. This command does not run it.",
+    );
   } else {
     lines.push("Regression test was not written.");
   }
   return `${lines.join("\n")}\n`;
+}
+
+function formatFailure(signature: TargetSignature | undefined): string {
+  if (signature === undefined) {
+    return "none";
+  }
+  if (signature.oracleId === "dom-text") {
+    return `${signature.code} (selector=${signature.facts.selector}, expect=${JSON.stringify(signature.facts.expect)}, actual=${JSON.stringify(signature.facts.actual)})`;
+  }
+  return `${signature.code} (email=${signature.facts.email}, actual=${signature.facts.actual}, expect=${signature.facts.expect})`;
 }
