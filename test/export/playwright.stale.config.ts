@@ -15,6 +15,7 @@ export default defineConfig({
   reporter: "line",
   use: {
     headless: true,
+    channel: "chromium",
     trace: "off",
     video: "off",
     screenshot: "off",

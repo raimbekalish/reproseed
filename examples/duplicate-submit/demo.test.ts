@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
-import { chromium, type Browser, type Page } from "playwright";
+import { type Browser, type Page } from "playwright";
+
+import { launchChromium } from "../../src/runner/session.ts";
 
 import { fetchRecords, resetAndConfirmEmpty } from "./harness.ts";
 import { installResponseDelay, type ResponseDelay } from "./response-delay.ts";
@@ -121,7 +123,7 @@ async function withDemo(
   const demo = await startDemoServer({ port: 0, appId, resetAuthorization });
   let browser: Browser | undefined;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await launchChromium();
     await fn({ browser, demo, appId, resetAuthorization });
   } finally {
     await browser?.close();

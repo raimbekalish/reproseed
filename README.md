@@ -38,6 +38,8 @@ npm run test:cli:e2e
 npm run test:search
 ```
 
+`npm run test:runner` starts those Chromium files one at a time (`--test-concurrency=1`). Each file keeps its own browser. Tests inside each file stay serial. Running several of those browsers at once has closed a browser during a replay.
+
 ## Demo server
 
 The server listens on `127.0.0.1` only. Reset stays disabled until `REPROSEED_APP_ID` and `REPROSEED_RESET_AUTHORIZATION` are both present in the process environment. Do not commit those values.

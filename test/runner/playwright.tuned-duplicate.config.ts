@@ -11,5 +11,5 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 90_000,
   reporter: "line",
-  use: { headless: true, trace: "off", video: "off", screenshot: "off" },
+  use: { headless: true, channel: "chromium", trace: "off", video: "off", screenshot: "off" },
 });

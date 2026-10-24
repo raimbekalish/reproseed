@@ -3,8 +3,6 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
-
 import { startDemoServer, type DemoServer } from "../../examples/duplicate-submit/server.ts";
 import { findMissingDependencies } from "../../src/core/dependencies.ts";
 import { VERIFIED_ONE_MINIMAL_CLAIM } from "../../src/core/minimize.ts";
@@ -12,6 +10,7 @@ import type { ExecutionOutcome, Scenario } from "../../src/core/types.ts";
 import { minimizeWithBrowser } from "../../src/runner/minimize-browser.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
 import type { FetchLike } from "../../src/runner/reset.ts";
+import { launchChromium } from "../../src/runner/session.ts";
 import { CORE_IDS, TARGET_SIGNATURE, duplicateSubmitScenario, sameIds } from "../fixture.ts";
 
 const APP_ID = "duplicate-submit";
@@ -41,7 +40,7 @@ describe("browser failure reduction", { concurrency: false }, () => {
         fetchImpl: observed.fetchImpl,
         launchBrowser: () => {
           launches += 1;
-          return chromium.launch({ headless: true });
+          return launchChromium();
         },
       });
 

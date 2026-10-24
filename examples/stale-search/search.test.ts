@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
-import { chromium, type Page } from "playwright";
+import { type Browser, type Page } from "playwright";
 
 import { installMatchedResponseDelay } from "../../src/runner/faults.ts";
+import { launchChromium } from "../../src/runner/session.ts";
 import { startSearchServer, type SearchPage, type SearchServer } from "./server.ts";
 
 const APP_ID = "stale-search";
@@ -88,9 +89,9 @@ async function withBrowser(
 ): Promise<void> {
   const token = randomBytes(16).toString("hex");
   const demo = await startSearchServer({ port: 0, appId: APP_ID, resetAuthorization: token, page: pageKind });
-  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let browser: Browser | undefined;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await launchChromium();
     const page = await browser.newPage();
     await run({ page, demo, token });
   } finally {

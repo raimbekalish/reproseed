@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, execFile, execFileSync, type ChildProcess } from "node:child_process";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -447,7 +447,7 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 60_000,
   reporter: "line",
-  use: { headless: true, trace: "off", video: "off", screenshot: "off" },
+  use: { headless: true, channel: "chromium", trace: "off", video: "off", screenshot: "off" },
 });
 `,
       );
@@ -549,52 +549,125 @@ function runCli(
       false,
     );
   }
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let leakedArgument = false;
-    child.once("spawn", () => {
-      leakedArgument = processArgsInclude(child, options.token);
-    });
-    const chunks: Buffer[] = [];
-    const errors: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-    }, options.timeout);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (leakedArgument) {
-        reject(new Error("reset credential was visible in the process arguments"));
-        return;
-      }
-      resolve({
-        code: code ?? 1,
-        stdout: Buffer.concat(chunks).toString("utf8"),
-        stderr: Buffer.concat(errors).toString("utf8"),
-      });
-    });
+  let reportArgs: (value: string | undefined) => void = () => undefined;
+  const argsPromise = new Promise<string | undefined>((resolve) => {
+    reportArgs = resolve;
+  });
+  const child = spawn(process.execPath, [cliPath, ...args], {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let reportedArgs = false;
+  const report = (value: string | undefined): void => {
+    if (reportedArgs) {
+      return;
+    }
+    reportedArgs = true;
+    reportArgs(value);
+  };
+  child.once("spawn", () => {
+    if (options.token !== undefined && child.pid !== undefined) {
+      void readProcessArgs(child.pid).then(report);
+      return;
+    }
+    report(undefined);
+  });
+  child.once("error", () => report(undefined));
+  return captureChild(child, options.timeout, argsPromise).then((result) => {
+    if (options.token !== undefined && result.args?.includes(options.token)) {
+      throw new Error("reset credential was visible in the process arguments");
+    }
+    return { code: result.code, stdout: result.stdout, stderr: result.stderr };
   });
 }
 
-function processArgsInclude(child: ChildProcess, token: string | undefined): boolean {
-  if (token === undefined || token.length < 8 || child.pid === undefined) {
-    return false;
+const PROCESS_ARGS_TIMEOUT_MS = 5_000;
+const CHILD_EXIT_GRACE_MS = 2_000;
+
+function readProcessArgs(pid: number): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      "ps",
+      ["-p", String(pid), "-o", "args="],
+      { encoding: "utf8", timeout: PROCESS_ARGS_TIMEOUT_MS, killSignal: "SIGKILL" },
+      (error, stdout) => {
+        resolve(error ? undefined : stdout);
+      },
+    );
+  });
+}
+
+function stopChild(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid !== undefined && pid > 1) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // The process already exited.
+    }
   }
-  try {
-    const listed = execFileSync("ps", ["-p", String(child.pid), "-o", "args="], { encoding: "utf8" });
-    return listed.includes(token);
-  } catch {
-    return false;
-  }
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+}
+
+function captureChild(
+  child: ChildProcess,
+  timeoutMs: number,
+  argsPromise: Promise<string | undefined> = Promise.resolve(undefined),
+): Promise<{ code: number; stdout: string; stderr: string; args?: string }> {
+  const chunks: Buffer[] = [];
+  const errors: Buffer[] = [];
+  child.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
+  child.stderr?.on("data", (chunk: Buffer) => errors.push(chunk));
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const finish = (handler: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      if (grace !== undefined) {
+        clearTimeout(grace);
+      }
+      handler();
+    };
+    const text = (): { stdout: string; stderr: string } => ({
+      stdout: Buffer.concat(chunks).toString("utf8"),
+      stderr: Buffer.concat(errors).toString("utf8"),
+    });
+    const settle = (code: number, extraStderr = ""): void => {
+      finish(() => {
+        const argsWait = Promise.race([
+          argsPromise,
+          new Promise<undefined>((resolveArgs) => setTimeout(() => resolveArgs(undefined), PROCESS_ARGS_TIMEOUT_MS + 1_000)),
+        ]);
+        void argsWait.then((args) => {
+          const captured = text();
+          resolve({
+            code,
+            stdout: captured.stdout,
+            stderr: extraStderr === "" ? captured.stderr : `${captured.stderr}${extraStderr}`,
+            ...(args !== undefined ? { args } : {}),
+          });
+        });
+      });
+    };
+    const timer = setTimeout(() => {
+      stopChild(child);
+      grace = setTimeout(() => {
+        settle(1, "\nchild did not exit after SIGKILL\n");
+      }, CHILD_EXIT_GRACE_MS);
+    }, timeoutMs);
+    child.once("error", (error) => {
+      finish(() => reject(error));
+    });
+    child.once("close", (code) => {
+      settle(code ?? 1);
+    });
+  });
 }
 
 async function writePlaywrightConfig(work: string): Promise<void> {
@@ -611,7 +684,7 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 60_000,
   reporter: "line",
-  use: { headless: true, trace: "off", video: "off", screenshot: "off" },
+  use: { headless: true, channel: "chromium", trace: "off", video: "off", screenshot: "off" },
 });
 `,
   );
@@ -643,63 +716,37 @@ async function runAgainst(work: string, page: DemoPage, token: string): Promise<
 async function runSearchSpec(work: string, page: SearchPage, token: string): Promise<{ code: number; output: string }> {
   const demo = await startSearchServer({ port: 0, appId: "stale-search", resetAuthorization: token, page });
   try {
-    return await new Promise((resolve, reject) => {
-      const child = spawn(
-        process.execPath,
-        [PLAYWRIGHT, "test", "--config", "playwright.stale.config.ts", "--retries=0", "--workers=1"],
-        {
-          cwd: work,
-          env: {
-            ...baseEnv(),
-            REPROSEED_ORIGIN: demo.origin,
-            REPROSEED_APP_ID: "stale-search",
-            REPROSEED_RESET_AUTHORIZATION: token,
-          },
-          stdio: ["ignore", "pipe", "pipe"],
+    const child = spawn(
+      process.execPath,
+      [PLAYWRIGHT, "test", "--config", "playwright.stale.config.ts", "--retries=0", "--workers=1"],
+      {
+        cwd: work,
+        env: {
+          ...baseEnv(),
+          REPROSEED_ORIGIN: demo.origin,
+          REPROSEED_APP_ID: "stale-search",
+          REPROSEED_RESET_AUTHORIZATION: token,
         },
-      );
-      const chunks: Buffer[] = [];
-      child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-      child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-      }, 90_000);
-      child.once("error", (error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      child.once("close", (code) => {
-        clearTimeout(timer);
-        resolve({ code: code ?? 1, output: stripAnsi(Buffer.concat(chunks).toString("utf8")) });
-      });
-    });
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const result = await captureChild(child, 90_000);
+    return { code: result.code, output: stripAnsi(`${result.stdout}\n${result.stderr}`) };
   } finally {
     await demo.close();
   }
 }
 
 function runPlaywright(work: string, env: NodeJS.ProcessEnv): Promise<{ code: number; output: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [PLAYWRIGHT, "test", "--config", "playwright.config.ts", "--retries=0", "--workers=1"], {
-      cwd: work,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const chunks: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-    }, 90_000);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      resolve({ code: code ?? 1, output: stripAnsi(Buffer.concat(chunks).toString("utf8")) });
-    });
+  const child = spawn(process.execPath, [PLAYWRIGHT, "test", "--config", "playwright.config.ts", "--retries=0", "--workers=1"], {
+    cwd: work,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  return captureChild(child, 90_000).then((result) => ({
+    code: result.code,
+    output: stripAnsi(`${result.stdout}\n${result.stderr}`),
+  }));
 }
 
 function embeddedStepIds(source: string): string[] {
@@ -715,7 +762,11 @@ function embeddedStepIds(source: string): string[] {
 
 function browserPids(): Promise<Set<number>> {
   return new Promise((resolve, reject) => {
-    execFile("ps", ["-ax", "-o", "pid=,command="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+    execFile(
+      "ps",
+      ["-ax", "-o", "pid=,command="],
+      { encoding: "utf8", timeout: 15_000, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) => {
       if (error) {
         reject(error);
         return;
@@ -737,13 +788,15 @@ function browserPids(): Promise<Set<number>> {
 
 async function waitForBrowsers(before: Set<number>): Promise<number[]> {
   let leaked: number[] = [];
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  // Chrome for Testing can stay visible for several seconds after Playwright exits.
+  // The check still requires every new browser process to exit on its own.
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     const after = await browserPids();
     leaked = [...after].filter((pid) => !before.has(pid));
     if (leaked.length === 0) {
       return [];
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return leaked;
 }

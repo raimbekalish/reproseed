@@ -19,6 +19,7 @@ import { signaturesEqual } from "../../src/core/signature.ts";
 import type { Scenario, TargetSignature } from "../../src/core/types.ts";
 import { writePlaywrightTest } from "../../src/export/playwright.ts";
 import { minimizeWithBrowser } from "../../src/runner/minimize-browser.ts";
+import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
 import type { FetchLike } from "../../src/runner/reset.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
@@ -150,9 +151,15 @@ describe("verified delay reduction in chromium", { concurrency: false }, () => {
   });
 });
 
+function stageFailure(optimization: DurationOptimization): string {
+  const outcome = optimization.stage1.replays[0]?.outcome;
+  const detail = outcome?.status === "error" || outcome?.status === "timeout" ? outcome.error : undefined;
+  return `${optimization.searchStatus}; stage 1 ${optimization.stage1.status}; ${detail ?? optimization.stage1.claim}`;
+}
+
 function assertMeasuredTiming(optimization: DurationOptimization, originalMs: number, method: "GET" | "POST"): void {
   assert.equal(optimization.requested, true);
-  assert.equal(optimization.delayStep?.originalMs, originalMs);
+  assert.equal(optimization.delayStep?.originalMs, originalMs, stageFailure(optimization));
   assert.equal(optimization.delayStep?.method, method);
   assert.ok(optimization.candidates.length > 0);
   assert.ok(optimization.replays.length > 0);
@@ -408,6 +415,7 @@ async function runStale(page: SearchPage, token: string): Promise<{ code: number
 function runPlaywright(config: string, origin: string, appId: string, token: string): Promise<{ code: number; output: string }> {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.DEBUG;
+  useInstalledPlaywrightBrowsers(env);
   env.REPROSEED_ORIGIN = origin;
   env.REPROSEED_APP_ID = appId;
   env.REPROSEED_RESET_AUTHORIZATION = token;
@@ -434,35 +442,42 @@ function runPlaywright(config: string, origin: string, appId: string, token: str
 
 function browserPids(): Promise<Set<number>> {
   return new Promise((resolve, reject) => {
-    execFile("ps", ["-ax", "-o", "pid=,command="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      const pids = new Set<number>();
-      for (const line of stdout.split("\n")) {
-        if (!/chrome-headless-shell|ms-playwright/.test(line)) {
-          continue;
+    execFile(
+      "ps",
+      ["-ax", "-o", "pid=,command="],
+      { encoding: "utf8", timeout: 15_000, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
         }
-        const match = /^\s*(\d+)/.exec(line);
-        if (match?.[1] !== undefined) {
-          pids.add(Number(match[1]));
+        const pids = new Set<number>();
+        for (const line of stdout.split("\n")) {
+          if (!/chrome-headless-shell|ms-playwright/.test(line)) {
+            continue;
+          }
+          const match = /^\s*(\d+)/.exec(line);
+          if (match?.[1] !== undefined) {
+            pids.add(Number(match[1]));
+          }
         }
-      }
-      resolve(pids);
-    });
+        resolve(pids);
+      },
+    );
   });
 }
 
 async function waitForBrowsers(before: Set<number>): Promise<number[]> {
   let leaked: number[] = [];
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  // Chrome for Testing can stay visible for several seconds after Playwright exits.
+  // The check still requires every new browser process to exit on its own.
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     const after = await browserPids();
     leaked = [...after].filter((pid) => !before.has(pid));
     if (leaked.length === 0) {
       return [];
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return leaked;
 }

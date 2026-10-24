@@ -2,12 +2,11 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
-
 import { loadScenarioFile } from "../../src/cli/scenario-file.ts";
 import type { ExecutionOutcome, Scenario, Step } from "../../src/core/types.ts";
 import { installMatchedResponseDelay, installOriginGuard } from "../../src/runner/faults.ts";
 import { startReplayRuntime } from "../../src/runner/replay.ts";
+import { launchChromium } from "../../src/runner/session.ts";
 import { startSearchServer, type SearchServer } from "../../examples/stale-search/server.ts";
 
 const APP_ID = "stale-search";
@@ -110,7 +109,7 @@ describe("stale search replay", { concurrency: false }, () => {
 
   it("does not let GET and POST response delays interfere", { timeout: 60_000 }, async () => {
     const demo = await startSearchServer({ port: 0, appId: APP_ID, resetAuthorization: randomBytes(16).toString("hex") });
-    const browser = await chromium.launch({ headless: true });
+    const browser = await launchChromium();
     try {
       const context = await browser.newContext();
       await installOriginGuard(context, demo.origin);
