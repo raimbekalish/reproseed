@@ -75,3 +75,9 @@ When `verify` is omitted, the check remains `GET /api/records`, so existing dupl
 One measured minimization of `examples/stale-search/scenario.json` used 52 replay executions, 14 cache hits, and about 30 seconds. The scenario budget allows 80 replays and 180 seconds so a slower machine can finish the same search without raising the ceiling to the old 90-replay, six-minute draft.
 
 This phase does not add a dashboard, an AI API, a cloud backend, authentication, a new database, or npm publication.
+
+## Phase 7B — verified fault-duration minimization
+
+`--tune-delays` runs after a verified step minimization. It does not change delta debugging. Each candidate is a new scenario object with one shorter positive integer delay, and its probe closes over that object. The original scenario is not mutated. The search is a bounded coarse-to-fine grid. It is not binary search, and a miss does not decide an unmeasured duration. The reported duration is the smallest confirmed candidate among the durations that were replayed.
+
+Confirmation uses fresh replays, not the step-minimizer cache. A promoted result is minimized again at that delay and then checked with five new verification replays of the original signature. If that second minimization is not verified, the phase 7A result stays the exported scenario. One kept delay step can be tuned. More than one kept delay is skipped and reported. The timing replay cap and wall clock are separate from `maxReplayExecutions` and `maxWallClockMs`.

@@ -1,3 +1,9 @@
+import {
+  DEFAULT_TIMING_MAX_REPLAYS,
+  DEFAULT_TIMING_MAX_WALL_CLOCK_MS,
+  DEFAULT_TIMING_RESOLUTION_MS,
+  type TimingSearchConfig,
+} from "../core/duration.ts";
 import { CliError, EXIT } from "./errors.ts";
 import { MINIMIZE_HELP, ROOT_HELP } from "./help.ts";
 
@@ -13,6 +19,7 @@ export type ParsedArgs =
       reportPath: string;
       specPath: string;
       force: boolean;
+      tuneDelays?: TimingSearchConfig;
     };
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -46,8 +53,15 @@ function parseMinimize(args: readonly string[]): ParsedArgs {
   let reportPath = DEFAULT_REPORT_PATH;
   let specPath = DEFAULT_SPEC_PATH;
   let force = false;
+  let tuneDelays = false;
+  let resolutionMs: number | undefined;
+  let maxReplays: number | undefined;
+  let maxWallClockMs: number | undefined;
   let sawReport = false;
   let sawSpec = false;
+  let sawResolution = false;
+  let sawMaxReplays = false;
+  let sawMaxWall = false;
   let optionsOpen = true;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -62,6 +76,49 @@ function parseMinimize(args: readonly string[]): ParsedArgs {
     if (optionsOpen && arg.startsWith("-")) {
       if (arg === "--force") {
         force = true;
+        continue;
+      }
+      if (arg === "--tune-delays") {
+        if (tuneDelays) {
+          throw new CliError("--tune-delays was provided more than once", EXIT.usage);
+        }
+        tuneDelays = true;
+        continue;
+      }
+      if (arg === "--timing-resolution" || arg.startsWith("--timing-resolution=")) {
+        if (sawResolution) {
+          throw new CliError("--timing-resolution was provided more than once", EXIT.usage);
+        }
+        resolutionMs = readIntegerOption(args, index, arg, "timing-resolution");
+        sawResolution = true;
+        if (arg.startsWith("--timing-resolution=")) {
+          continue;
+        }
+        index += 1;
+        continue;
+      }
+      if (arg === "--timing-max-replays" || arg.startsWith("--timing-max-replays=")) {
+        if (sawMaxReplays) {
+          throw new CliError("--timing-max-replays was provided more than once", EXIT.usage);
+        }
+        maxReplays = readIntegerOption(args, index, arg, "timing-max-replays");
+        sawMaxReplays = true;
+        if (arg.startsWith("--timing-max-replays=")) {
+          continue;
+        }
+        index += 1;
+        continue;
+      }
+      if (arg === "--timing-max-ms" || arg.startsWith("--timing-max-ms=")) {
+        if (sawMaxWall) {
+          throw new CliError("--timing-max-ms was provided more than once", EXIT.usage);
+        }
+        maxWallClockMs = readIntegerOption(args, index, arg, "timing-max-ms");
+        sawMaxWall = true;
+        if (arg.startsWith("--timing-max-ms=")) {
+          continue;
+        }
+        index += 1;
         continue;
       }
       if (arg === "--report" || arg.startsWith("--report=")) {
@@ -95,7 +152,52 @@ function parseMinimize(args: readonly string[]): ParsedArgs {
   if (scenarioPath === undefined) {
     throw new CliError("scenario file is required", EXIT.usage);
   }
-  return { kind: "minimize", scenarioPath, reportPath, specPath, force };
+  if ((sawResolution || sawMaxReplays || sawMaxWall) && !tuneDelays) {
+    throw new CliError("timing options require --tune-delays", EXIT.usage);
+  }
+  return {
+    kind: "minimize",
+    scenarioPath,
+    reportPath,
+    specPath,
+    force,
+    ...(tuneDelays
+      ? {
+          tuneDelays: {
+            resolutionMs: resolutionMs ?? DEFAULT_TIMING_RESOLUTION_MS,
+            maxReplayExecutions: maxReplays ?? DEFAULT_TIMING_MAX_REPLAYS,
+            maxWallClockMs: maxWallClockMs ?? DEFAULT_TIMING_MAX_WALL_CLOCK_MS,
+          },
+        }
+      : {}),
+  };
+}
+
+function readIntegerOption(
+  args: readonly string[],
+  index: number,
+  arg: string,
+  name: "timing-resolution" | "timing-max-replays" | "timing-max-ms",
+): number {
+  const prefix = `--${name}=`;
+  let raw: string;
+  if (arg.startsWith(prefix)) {
+    raw = arg.slice(prefix.length);
+  } else {
+    const next = args[index + 1];
+    if (next === undefined || next === "--" || next.startsWith("-")) {
+      throw new CliError(`--${name} requires a positive integer`, EXIT.usage);
+    }
+    raw = next;
+  }
+  if (!/^[1-9][0-9]*$/.test(raw)) {
+    throw new CliError(`--${name} requires a positive integer`, EXIT.usage);
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new CliError(`--${name} requires a positive integer`, EXIT.usage);
+  }
+  return value;
 }
 
 function readOption(

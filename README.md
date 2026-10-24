@@ -138,6 +138,8 @@ Exit codes:
 | 3 | Replay or wall-clock budget exhausted. |
 | 4 | Runner or output failure. |
 
+`--tune-delays` is optional and off by default. After a verified step minimization it replays shorter network delays in Chromium. The default grid is 250ms, with at most 36 timing replays and 180000ms of timing-stage wall clock. Those limits are separate from the scenario budget. Override them with `--timing-resolution`, `--timing-max-replays`, and `--timing-max-ms`. The search measures at most 4 coarse durations and 4 finer ones. It does not treat the race as monotonic, and it reports the smallest confirmed duration among the durations it actually replayed. One kept delay can be tuned. Several kept delays are skipped. A shorter delay is exported only after a new minimization and five fresh verification replays reproduce the original failure. Otherwise the original verified scenario is exported unchanged.
+
 `reproseed --help` and `reproseed minimize --help` print the same contract. `npm run build` compiles `src/` to `dist/` and copies `runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` next to the compiled exporter. The generated spec embeds those files, so the built command does not need a TypeScript checkout.
 
 The spec reads these environment variables at runtime:

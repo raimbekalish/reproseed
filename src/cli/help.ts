@@ -1,4 +1,11 @@
 import { EXIT } from "./errors.ts";
+import {
+  DEFAULT_TIMING_MAX_COARSE,
+  DEFAULT_TIMING_MAX_FINE,
+  DEFAULT_TIMING_MAX_REPLAYS,
+  DEFAULT_TIMING_MAX_WALL_CLOCK_MS,
+  DEFAULT_TIMING_RESOLUTION_MS,
+} from "../core/duration.ts";
 
 export const ROOT_HELP = `ReproSeed minimizes a failing scenario and writes a Playwright regression test.
 
@@ -8,7 +15,7 @@ It does not target production websites.
 Usage:
   reproseed --help
   reproseed --version
-  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--force]
+  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--force] [--tune-delays]
 
 Commands:
   minimize    Run Chromium minimization against a local scenario file
@@ -17,7 +24,7 @@ Run \`reproseed minimize --help\` for environment variables, outputs, and exit c
 `;
 
 export const MINIMIZE_HELP = `Usage:
-  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--force]
+  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--force] [--tune-delays]
 
 Arguments:
   scenario.json       Scenario file. It must not contain resetAuthorization.
@@ -27,7 +34,22 @@ Options:
   --spec <file>       Playwright test written only after verification
                       (default: artifacts/minimized.spec.ts)
   --force             Replace an existing report or spec file
+  --tune-delays       After a verified step minimization, search for a shorter
+                      network response delay. Off by default.
+  --timing-resolution <ms>
+                      Positive millisecond grid for that search (default: ${DEFAULT_TIMING_RESOLUTION_MS}).
+                      Requires --tune-delays.
+  --timing-max-replays <n>
+                      Maximum timing-stage browser replays (default: ${DEFAULT_TIMING_MAX_REPLAYS}).
+                      Requires --tune-delays. This budget is separate from the
+                      scenario's maxReplayExecutions.
+  --timing-max-ms <ms>
+                      Timing-stage wall-clock budget in milliseconds
+                      (default: ${DEFAULT_TIMING_MAX_WALL_CLOCK_MS}). Requires --tune-delays.
+                      This budget is separate from the scenario's maxWallClockMs.
   --help              Show this help
+
+--tune-delays measures at most ${DEFAULT_TIMING_MAX_COARSE} coarse durations and ${DEFAULT_TIMING_MAX_FINE} finer durations below the original delay. It never raises a delay. Races are not treated as monotonic. The reported duration is the smallest confirmed candidate among the durations actually replayed, not a proof about untested values. Each candidate is confirmed with the scenario's reductionConfirmRuns, and those runs are fresh replays. One kept delay step can be tuned. Several kept delay steps are skipped. A shorter delay is kept only after a new minimization and five fresh verification replays reproduce the original failure. Otherwise the verified step minimization is exported unchanged.
 
 Environment (not read from the scenario file, and not passed as arguments):
   REPROSEED_ORIGIN                  Loopback http origin, such as http://127.0.0.1:4010
