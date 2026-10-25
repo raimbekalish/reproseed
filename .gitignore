@@ -1,6 +1,7 @@
 node_modules/
 dist/
 artifacts/
+.DS_Store
 *.tsbuildinfo
 .env
 .env.*
