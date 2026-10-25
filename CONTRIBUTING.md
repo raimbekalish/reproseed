@@ -2,6 +2,8 @@
 
 ReproSeed is a local CLI. Changes should stay understandable to someone who has not seen the project before. [README.md](README.md) explains what the tool does. This file explains how to work on it.
 
+ReproSeed source code is under the MIT license in [LICENSE](LICENSE), copyright (c) 2026 Raimbek Alish. Dependencies keep their own licenses. Playwright is Apache-2.0. Do not remove `LICENSE` from the tree or from the npm package.
+
 The repository owner reviews pull requests. This document does not promise a response time.
 
 ## Prerequisites
@@ -43,7 +45,7 @@ Generate reset credentials in the shell when you need a demo. Do not commit them
 | `examples/stale-search` | DOM-text demo and scenario |
 | `test` | Unit tests and browser integration |
 | `scripts` | Export-asset copy and the CI Chromium installer |
-| `docs` | Design notes, the release checklist, and the license proposal |
+| `docs` | Design notes, the release checklist, and the record of the MIT license decision |
 | `.github` | CI workflow and issue/pull-request templates |
 
 ## Fast checks

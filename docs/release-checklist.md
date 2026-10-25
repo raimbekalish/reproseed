@@ -22,8 +22,8 @@ Complete every item on the commit you intend to release. Record the commit SHA n
 
 ## Package contents
 
-- [ ] `npm pack --dry-run` lists only the intended files: `package.json`, `README.md`, `dist/`, and the two example scenario files, plus the compiled JavaScript under `dist/`.
-- [ ] The tarball contains `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts`.
+- [ ] `npm pack --dry-run` lists only the intended files: `package.json`, `LICENSE`, `README.md`, `dist/`, and the two example scenario files, plus the compiled JavaScript under `dist/`.
+- [ ] The tarball contains `LICENSE` with `Copyright (c) 2026 Raimbek Alish`, and `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts`.
 - [ ] The tarball does not contain `src/`, `artifacts/`, test results, `.env`, credentials, or a reset token.
 - [ ] `private` is still `true` until the owner deliberately publishes. Publishing requires removing `private` or using a one-off publish path the owner has written down. Do not publish as part of a documentation change.
 
@@ -42,16 +42,18 @@ Complete every item on the commit you intend to release. Record the commit SHA n
 
 ## License
 
-- [ ] The owner has chosen MIT or Apache-2.0. See [licensing-proposal.md](licensing-proposal.md).
-- [ ] A `LICENSE` file is committed with the owner's copyright line.
-- [ ] README describes that license and no longer says a license is pending.
-- [ ] `package.json` `license` matches the chosen file. Set that field only when the license file lands.
+MIT is already the license for ReproSeed source. [../LICENSE](../LICENSE) contains `Copyright (c) 2026 Raimbek Alish`. `package.json` sets `"license": "MIT"`. Dependencies keep their own licenses. On the release commit, confirm:
+
+- [ ] `LICENSE` is still the MIT text and the copyright line is unchanged, or an intentional change is explained.
+- [ ] `package.json` `license` is still `MIT` and matches `LICENSE`.
+- [ ] README says MIT covers this source tree and that third-party packages keep their own licenses.
+- [ ] `npm pack` includes `LICENSE`.
 
 ## Security reporting
 
-- [ ] [SECURITY.md](../SECURITY.md) names a real private channel, or states that private reporting is still not configured.
-- [ ] If GitHub private vulnerability reporting is turned on, SECURITY.md tells people to use the Security tab and does not ask them to paste exploits into public issues.
-- [ ] Supported versions in SECURITY.md match versions that were actually published.
+- [ ] [SECURITY.md](../SECURITY.md) still tells people to use GitHub private vulnerability reporting (Security → Advisories) and does not ask them to post exploits in public issues.
+- [ ] A GET of `repos/raimbekalish/reproseed/private-vulnerability-reporting` still returns `"enabled": true`, or SECURITY.md has been updated to match the real setting.
+- [ ] Supported versions in SECURITY.md match versions that were actually published. None have been published yet.
 
 ## Version and tag
 
