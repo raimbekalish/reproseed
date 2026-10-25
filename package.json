@@ -32,6 +32,8 @@
     "test:search": "node --test examples/stale-search/*.test.ts",
     "test:cli": "node --test test/cli/args.test.ts test/cli/scenario.test.ts test/cli/command.test.ts",
     "test:cli:e2e": "node --test test/cli/e2e.test.ts",
+    "test:browsers": "npm run test:demo && npm run test:search && npm run test:runner && npm run test:export && npm run test:cli:e2e",
+    "test:package": "node --test test/package/smoke.test.ts",
     "demo": "node examples/duplicate-submit/server.ts",
     "demo:search": "node examples/stale-search/server.ts"
   },

@@ -8,6 +8,9 @@ import { bounded, CLEANUP_BUDGET_MS } from "./timing.ts";
 
 const MISSING_EXECUTABLE = /Executable doesn't exist at ([^\n]+)/;
 const LAUNCH_TIMEOUT_MS = 30_000;
+const DIAGNOSTIC_PATH_LIMIT = 180;
+const DIAGNOSTIC_LIMIT = 1_200;
+const DOWNLOADED_CHROMIUM = /(?:^|\/)chromium-\d+\//;
 
 export type BrowserPool = {
   acquire: () => Promise<Browser>;
@@ -42,10 +45,11 @@ export function useInstalledPlaywrightBrowsers(env: NodeJS.ProcessEnv): void {
 }
 
 /**
- * Launches Playwright's Chromium build, not chrome-headless-shell.
- * On macOS 26 the headless shell aborts with SIGTRAP during replays.
- * `channel: "chromium"` is that same downloaded revision (Chrome for Testing).
- * It is not the system Chrome channel.
+ * Launches Playwright's downloaded Chromium build, not chrome-headless-shell
+ * and not a system Chrome channel. On macOS 26 the headless shell aborts with
+ * SIGTRAP during replays. `channel: "chromium"` selects that downloaded revision
+ * on Linux and macOS. A missing executable is recovered only when the same
+ * Chromium revision is already present in Playwright's default cache.
  */
 export async function launchChromium(): Promise<Browser> {
   try {
@@ -55,12 +59,88 @@ export async function launchChromium(): Promise<Browser> {
       timeout: LAUNCH_TIMEOUT_MS,
     });
   } catch (error) {
-    const executablePath = fallbackPlaywrightExecutable(error);
+    const executablePath = chromiumLaunchFallback(error);
     if (executablePath === undefined) {
-      throw error;
+      throw annotateLaunchError(error);
     }
-    return chromium.launch({ headless: true, executablePath, timeout: LAUNCH_TIMEOUT_MS });
+    try {
+      return await chromium.launch({ headless: true, executablePath, timeout: LAUNCH_TIMEOUT_MS });
+    } catch (fallbackError) {
+      throw annotateLaunchError(fallbackError, executablePath);
+    }
   }
+}
+
+/**
+ * Same-revision recovery for `launchChromium`. Headless-shell and system-browser
+ * paths are refused so a failed Chromium launch cannot switch binaries.
+ */
+export function chromiumLaunchFallback(
+  error: unknown,
+  browsersRoot = defaultPlaywrightBrowsersRoot(),
+  exists: (path: string) => boolean = existsSync,
+): string | undefined {
+  const candidate = fallbackPlaywrightExecutable(error, browsersRoot, exists);
+  if (candidate === undefined || !isDownloadedChromiumExecutable(candidate)) {
+    return undefined;
+  }
+  return candidate;
+}
+
+/** Bounded launch context for CI logs. Does not include the reset credential. */
+export function formatLaunchDiagnostic(fallbackPath?: string): string {
+  let executable = "unavailable";
+  try {
+    const candidate = chromium.executablePath();
+    executable = `${candidate} (${existsSync(candidate) ? "present" : "missing"})`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    executable = `unavailable (${message})`;
+  }
+  const configured = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  const browsers = configured === undefined || configured === "" ? "unset" : truncate(configured, DIAGNOSTIC_PATH_LIMIT);
+  const lines = [
+    `playwright launch: platform=${process.platform} arch=${process.arch} headless=true channel=chromium timeoutMs=${LAUNCH_TIMEOUT_MS}`,
+    `playwright executable=${truncate(executable, DIAGNOSTIC_PATH_LIMIT)}`,
+    `PLAYWRIGHT_BROWSERS_PATH=${browsers}`,
+  ];
+  if (fallbackPath !== undefined) {
+    const state = existsSync(fallbackPath) ? "present" : "missing";
+    lines.push(`fallback executable=${truncate(fallbackPath, DIAGNOSTIC_PATH_LIMIT)} (${state})`);
+  }
+  return redact(lines.join("\n")).slice(0, DIAGNOSTIC_LIMIT);
+}
+
+function annotateLaunchError(error: unknown, fallbackPath?: string): Error {
+  const note = formatLaunchDiagnostic(fallbackPath);
+  if (error instanceof Error) {
+    const annotated = new Error(`${error.message}\n${note}`);
+    annotated.name = error.name;
+    annotated.cause = error;
+    return annotated;
+  }
+  return new Error(`${String(error)}\n${note}`);
+}
+
+function isDownloadedChromiumExecutable(executablePath: string): boolean {
+  const normalized = executablePath.replaceAll("\\", "/");
+  if (normalized.includes("chrome-headless-shell") || normalized.includes("chromium_headless_shell-")) {
+    return false;
+  }
+  return DOWNLOADED_CHROMIUM.test(normalized);
+}
+
+function truncate(value: string, limit: number): string {
+  const compact = value.replaceAll("\n", " ");
+  return compact.length <= limit ? compact : `${compact.slice(0, limit)}…`;
+}
+
+function redact(value: string): string {
+  const secret = process.env.REPROSEED_RESET_AUTHORIZATION;
+  if (secret === undefined || secret === "") {
+    return value;
+  }
+  return value.split(secret).join("[redacted]");
 }
 
 /**

@@ -1,0 +1,112 @@
+# Quality, Chromium, and package jobs are separate so a failure is obvious.
+# Browser suites stay in one job and run one after another. They are not safe to overlap.
+# The workflow reads repository contents only. It does not publish or create a release.
+
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+      - name: CLI tests
+        run: npm run test:cli
+
+  chromium:
+    name: Chromium integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: node scripts/install-playwright-chromium.mjs
+
+      - name: Duplicate-submit demo
+        run: npm run test:demo
+
+      - name: Stale-search demo
+        run: npm run test:search
+
+      - name: Browser runner
+        run: npm run test:runner
+
+      - name: Regression export
+        run: npm run test:export
+
+      - name: CLI end to end
+        run: npm run test:cli:e2e
+
+  package:
+    name: Package smoke verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package smoke test
+        run: npm run test:package

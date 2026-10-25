@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, execFile, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +14,7 @@ import { startSearchServer, type SearchPage } from "../../examples/stale-search/
 import { EXIT } from "../../src/cli/errors.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
 import { CORE_IDS, TARGET_SIGNATURE } from "../fixture.ts";
+import { browserPids, browserProcessNote, leakedProcessNote, processCommand } from "../process-snapshot.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const NODE_MODULES = join(REPO, "node_modules");
@@ -191,7 +192,8 @@ describe("built reproseed cli", { concurrency: false }, () => {
       await demo.close();
       await rm(work, { recursive: true, force: true });
     }
-    assert.deepEqual(await waitForBrowsers(before), []);
+    const leaked = await waitForBrowsers(before);
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 
   it("exits when the replay budget is exhausted and does not write a spec", async () => {
@@ -226,7 +228,8 @@ describe("built reproseed cli", { concurrency: false }, () => {
       await demo.close();
       await rm(work, { recursive: true, force: true });
     }
-    assert.deepEqual(await waitForBrowsers(before), []);
+    const leaked = await waitForBrowsers(before);
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 
   it("exits when the scenario does not reproduce a failure", async () => {
@@ -259,7 +262,8 @@ describe("built reproseed cli", { concurrency: false }, () => {
       await demo.close();
       await rm(work, { recursive: true, force: true });
     }
-    assert.deepEqual(await waitForBrowsers(before), []);
+    const leaked = await waitForBrowsers(before);
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 
   it("minimizes the duplicate-submit scenario and checks the exported test both ways", { timeout: 720_000 }, async () => {
@@ -367,7 +371,7 @@ describe("built reproseed cli", { concurrency: false }, () => {
       }
       await rm(work, { recursive: true, force: true });
     }
-    assert.deepEqual(leaked, []);
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 
   it("minimizes the stale-search scenario from the built CLI", { timeout: 720_000 }, async () => {
@@ -474,7 +478,7 @@ export default defineConfig({
       }
       await rm(work, { recursive: true, force: true });
     }
-    assert.deepEqual(leaked, []);
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 });
 
@@ -586,16 +590,7 @@ const PROCESS_ARGS_TIMEOUT_MS = 5_000;
 const CHILD_EXIT_GRACE_MS = 2_000;
 
 function readProcessArgs(pid: number): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    execFile(
-      "ps",
-      ["-p", String(pid), "-o", "args="],
-      { encoding: "utf8", timeout: PROCESS_ARGS_TIMEOUT_MS, killSignal: "SIGKILL" },
-      (error, stdout) => {
-        resolve(error ? undefined : stdout);
-      },
-    );
-  });
+  return processCommand(pid);
 }
 
 function stopChild(child: ChildProcess): void {
@@ -658,7 +653,9 @@ function captureChild(
     const timer = setTimeout(() => {
       stopChild(child);
       grace = setTimeout(() => {
-        settle(1, "\nchild did not exit after SIGKILL\n");
+        void browserProcessNote().then((note) => {
+          settle(1, `\nchild did not exit after SIGKILL\n${note}\n`);
+        });
       }, CHILD_EXIT_GRACE_MS);
     }, timeoutMs);
     child.once("error", (error) => {
@@ -758,32 +755,6 @@ function embeddedStepIds(source: string): string[] {
   assert.notEqual(end, -1);
   const value = vm.runInNewContext(source.slice(expressionStart, end), { JSON }) as { steps: Array<{ id: string }> };
   return value.steps.map((step) => step.id);
-}
-
-function browserPids(): Promise<Set<number>> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "ps",
-      ["-ax", "-o", "pid=,command="],
-      { encoding: "utf8", timeout: 15_000, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      const pids = new Set<number>();
-      for (const line of stdout.split("\n")) {
-        if (!/chrome-headless-shell|ms-playwright/.test(line)) {
-          continue;
-        }
-        const match = /^\s*(\d+)/.exec(line);
-        if (match?.[1] !== undefined) {
-          pids.add(Number(match[1]));
-        }
-      }
-      resolve(pids);
-    });
-  });
 }
 
 async function waitForBrowsers(before: Set<number>): Promise<number[]> {
