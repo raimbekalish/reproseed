@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
@@ -21,6 +21,7 @@ import { writePlaywrightTest } from "../../src/export/playwright.ts";
 import { minimizeWithBrowser } from "../../src/runner/minimize-browser.ts";
 import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
 import type { FetchLike } from "../../src/runner/reset.ts";
+import { browserPids, browserProcessNote, leakedProcessNote } from "../process-snapshot.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const DUPLICATE_SCENARIO = fileURLToPath(new URL("../../examples/duplicate-submit/scenario.json", import.meta.url));
@@ -93,7 +94,8 @@ describe("verified delay reduction in chromium", { concurrency: false }, () => {
     } finally {
       await demo.close();
     }
-    assert.deepEqual(await waitForBrowsers(before), []);
+    const leaked = await waitForBrowsers(before);
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 
   it("tunes the stale-search GET delay and exports that duration", { timeout: 1_200_000 }, async () => {
@@ -147,7 +149,8 @@ describe("verified delay reduction in chromium", { concurrency: false }, () => {
     } finally {
       await demo.close();
     }
-    assert.deepEqual(await waitForBrowsers(before), []);
+    const leaked = await waitForBrowsers(before);
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 });
 
@@ -428,42 +431,26 @@ function runPlaywright(config: string, origin: string, appId: string, token: str
     const chunks: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
-    const timer = setTimeout(() => child.kill("SIGKILL"), 90_000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, 90_000);
     child.once("error", (error) => {
       clearTimeout(timer);
       reject(error);
     });
     child.once("close", (code) => {
       clearTimeout(timer);
-      resolve({ code: code ?? 1, output: stripAnsi(Buffer.concat(chunks).toString("utf8")) });
+      const output = stripAnsi(Buffer.concat(chunks).toString("utf8"));
+      if (!timedOut) {
+        resolve({ code: code ?? 1, output });
+        return;
+      }
+      void browserProcessNote().then((note) => {
+        resolve({ code: code ?? 1, output: `${output}\n${note}\n` });
+      });
     });
-  });
-}
-
-function browserPids(): Promise<Set<number>> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "ps",
-      ["-ax", "-o", "pid=,command="],
-      { encoding: "utf8", timeout: 15_000, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        const pids = new Set<number>();
-        for (const line of stdout.split("\n")) {
-          if (!/chrome-headless-shell|ms-playwright/.test(line)) {
-            continue;
-          }
-          const match = /^\s*(\d+)/.exec(line);
-          if (match?.[1] !== undefined) {
-            pids.add(Number(match[1]));
-          }
-        }
-        resolve(pids);
-      },
-    );
   });
 }
 
