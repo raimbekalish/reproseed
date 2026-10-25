@@ -73,4 +73,46 @@ describe("dependencies", () => {
       /GET or POST/,
     );
   });
+
+  it("accepts an omitted clean-state rule and rejects one that leaves the origin", () => {
+    const scenario = duplicateSubmitScenario();
+    assert.equal(scenario.reset.verify, undefined);
+    assert.doesNotThrow(() => assertScenario(scenario));
+    const withHistory: Scenario = {
+      ...scenario,
+      reset: {
+        method: "POST",
+        path: "/__reproseed/reset",
+        verify: { kind: "json-array-empty", method: "GET", path: "/api/search-history" },
+      },
+    };
+    assert.doesNotThrow(() => assertScenario(withHistory));
+    for (const path of ["//evil.example/state", "https://evil.example/state", "/javascript:alert(1)", "/\\evil"]) {
+      assert.throws(
+        () =>
+          assertScenario({
+            ...scenario,
+            reset: {
+              method: "POST",
+              path: "/__reproseed/reset",
+              verify: { kind: "json-array-empty", method: "GET", path },
+            },
+          }),
+        /authorized origin/,
+        path,
+      );
+    }
+    assert.throws(
+      () =>
+        assertScenario({
+          ...scenario,
+          reset: {
+            method: "POST",
+            path: "/__reproseed/reset",
+            verify: { kind: "shell" as "json-array-empty", method: "GET", path: "/api/records" },
+          },
+        }),
+      /json-array-empty/,
+    );
+  });
 });

@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { cleanStateVerify } from "../core/clean-state.ts";
+import type { DurationOptimization } from "../core/duration.ts";
 import type { Budget, MinimizeReport, Oracle, Scenario, Step } from "../core/types.ts";
 
 const REDACTED = "[redacted]";
@@ -16,13 +18,18 @@ export type SanitizedMinimizeArtifact = {
     budget: Budget;
   };
   report: MinimizeReport;
+  durationOptimization?: DurationOptimization;
 };
 
 /**
  * Copies the public scenario fields and the minimizer report.
  * `resetAuthorization` is omitted, and any copy of that credential is replaced.
  */
-export function sanitizeArtifact(scenario: Scenario, report: MinimizeReport): SanitizedMinimizeArtifact {
+export function sanitizeArtifact(
+  scenario: Scenario,
+  report: MinimizeReport,
+  optimization?: DurationOptimization,
+): SanitizedMinimizeArtifact {
   const artifact: SanitizedMinimizeArtifact = {
     scenario: {
       id: scenario.id,
@@ -30,18 +37,30 @@ export function sanitizeArtifact(scenario: Scenario, report: MinimizeReport): Sa
         origin: scenario.target.origin,
         appId: scenario.target.appId,
       },
-      reset: { method: scenario.reset.method, path: scenario.reset.path },
+      reset: {
+        method: scenario.reset.method,
+        path: scenario.reset.path,
+        verify: cleanStateVerify(scenario.reset),
+      },
       steps: scenario.steps.map((step) => ({ id: step.id, kind: step.kind })),
       oracle: copyOracle(scenario.oracle),
       budget: { ...scenario.budget },
     },
     report: JSON.parse(JSON.stringify(report)) as MinimizeReport,
+    ...(optimization !== undefined
+      ? { durationOptimization: JSON.parse(JSON.stringify(optimization)) as DurationOptimization }
+      : {}),
   };
   return redactValue(artifact, usableSecrets([scenario.target.resetAuthorization])) as SanitizedMinimizeArtifact;
 }
 
-export async function writeSanitizedReport(path: string, scenario: Scenario, report: MinimizeReport): Promise<void> {
-  const artifact = sanitizeArtifact(scenario, report);
+export async function writeSanitizedReport(
+  path: string,
+  scenario: Scenario,
+  report: MinimizeReport,
+  optimization?: DurationOptimization,
+): Promise<void> {
+  const artifact = sanitizeArtifact(scenario, report, optimization);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
 }

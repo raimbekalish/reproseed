@@ -21,9 +21,21 @@ export type TargetApp = {
   resetAuthorization: string;
 };
 
+/**
+ * After an authorized reset, `GET path` on the same origin must return a JSON array
+ * of length 0. This is data, not a script. When `verify` is omitted, the check is
+ * `GET /api/records`, which is the duplicate-submit clean state.
+ */
+export type JsonArrayEmptyVerify = {
+  kind: "json-array-empty";
+  method: "GET";
+  path: string;
+};
+
 export type ResetSpec = {
   method: "POST";
   path: "/__reproseed/reset";
+  verify?: JsonArrayEmptyVerify;
 };
 
 export type RecordCountOracle = {

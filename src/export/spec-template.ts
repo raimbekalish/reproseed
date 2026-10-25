@@ -21,8 +21,11 @@ type ExportedOracle =
   | { id: "record-count"; path: string; email: string; expect: number }
   | { id: "dom-text"; selector: string; expect: string };
 
+type ExportedVerify = { kind: "json-array-empty"; method: "GET"; path: string };
+
 type ExportedScenario = {
   oracle: ExportedOracle;
+  verify: ExportedVerify;
   steps: ExportedStep[];
 };
 
@@ -42,8 +45,7 @@ test(
   async ({ browser }) => {
   const config = readRuntimeConfig(process.env);
   await confirmIdentity(config.origin, config.appId);
-  const emptyListPath = scenario.oracle.id === "record-count" ? scenario.oracle.path : "/api/records";
-  await resetAuthorized(config, emptyListPath);
+  await resetAuthorized(config, scenario.verify);
   const context = await browser.newContext();
   const delays: DelayHandle[] = [];
   let removeGuard: (() => Promise<void>) | undefined;
@@ -123,7 +125,10 @@ async function confirmIdentity(origin: string, appId: string): Promise<void> {
   }
 }
 
-async function resetAuthorized(config: RuntimeConfig, oraclePath: string): Promise<void> {
+async function resetAuthorized(config: RuntimeConfig, verify: ExportedVerify): Promise<void> {
+  if (verify === undefined || verify.kind !== "json-array-empty" || verify.method !== "GET") {
+    throw new Error("reset verification must be a GET json-array-empty check");
+  }
   const response = await fetch(authorizedUrl(config.origin, "/__reproseed/reset"), {
     method: "POST",
     redirect: "error",
@@ -135,8 +140,20 @@ async function resetAuthorized(config: RuntimeConfig, oraclePath: string): Promi
   if (!response.ok) {
     throw new Error(\`reset failed (\${response.status})\`);
   }
-  const records = await readRecords(config.origin, oraclePath);
-  expect(records.length).toBe(0);
+  const items = await readJsonArray(config.origin, verify.path);
+  expect(items.length).toBe(0);
+}
+
+async function readJsonArray(origin: string, path: string): Promise<unknown[]> {
+  const response = await fetch(authorizedUrl(origin, path), { redirect: "error" });
+  if (!response.ok) {
+    throw new Error(\`clean-state check failed (\${response.status})\`);
+  }
+  const body: unknown = await response.json();
+  if (!Array.isArray(body)) {
+    throw new Error("clean-state response was not a JSON array");
+  }
+  return body;
 }
 
 async function readRecords(origin: string, path: string): Promise<unknown[]> {

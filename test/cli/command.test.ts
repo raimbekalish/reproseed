@@ -6,12 +6,15 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import vm from "node:vm";
+
 import { EXIT } from "../../src/cli/errors.ts";
 import { exitCodeForStatus } from "../../src/cli/format.ts";
 import { main } from "../../src/cli/main.ts";
 import type { MinimizeRunner } from "../../src/cli/run.ts";
-import type { MinimizeReport, MinimizeStatus } from "../../src/core/types.ts";
-import { CORE_IDS } from "../fixture.ts";
+import type { MinimizeReport, MinimizeStatus, Scenario } from "../../src/core/types.ts";
+import { optimizeVerifiedDuration } from "../../src/runner/minimize-duration.ts";
+import { CORE_IDS, outcomeForDuplicateSubmit } from "../fixture.ts";
 import { verifiedMinimizeReport } from "../export/verified-report.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/duplicate-submit/scenario.json", import.meta.url));
@@ -50,6 +53,7 @@ describe("minimize command", () => {
       assert.match(result.stdout, /verify: 5/);
       assert.match(result.stdout, /\[redacted\]/);
       assert.match(result.stdout, /not a proof of the globally shortest reproduction/);
+      assert.equal(result.stdout.includes("Timing optimization"), false);
       const report = await readFile(join(directory, "artifacts/report.json"), "utf8");
       const spec = await readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8");
       assert.equal(report.includes(token), false);
@@ -169,6 +173,91 @@ describe("minimize command", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("exports a tuned delay when timing verification succeeds and redacts the reset credential", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-tune-"));
+    try {
+      const result = await run(directory, token, {
+        args: ["--tune-delays", "--timing-resolution", "500", "--timing-max-replays", "40", "--timing-max-ms", "60000"],
+        minimize: async (input) => {
+          assert.equal(input.tuneDelays?.resolutionMs, 500);
+          assert.equal(input.tuneDelays?.maxReplayExecutions, 40);
+          const stage1 = verifiedMinimizeReport(input.scenario, CORE_IDS);
+          return optimizeVerifiedDuration({
+            scenario: input.scenario,
+            stage1,
+            config: input.tuneDelays ?? { resolutionMs: 500, maxReplayExecutions: 40, maxWallClockMs: 60_000 },
+            now: () => 0,
+            probeFor: (variant) => async (ids) => {
+              const ms = delayMs(variant);
+              if (ms !== 500 && ms < 2000) {
+                return { status: "pass", durationMs: 1 };
+              }
+              return outcomeForDuplicateSubmit(ids);
+            },
+          });
+        },
+      });
+      assert.equal(result.code, EXIT.verified, result.stderr);
+      assert.match(result.stdout, /Timing optimization: requested/);
+      assert.match(result.stdout, /Timing improved: yes/);
+      assert.match(result.stdout, /Original delay: 2000ms \(slow\)/);
+      assert.match(result.stdout, /Selected delay: 500ms/);
+      assert.match(result.stdout, /Final delay: 500ms/);
+      assert.match(result.stdout, /Tuned result fully verified: yes/);
+      assert.match(result.stdout, /Original verified result retained: no/);
+      assert.equal(result.stdout.includes(token), false);
+      const spec = await readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8");
+      assert.equal(embeddedDelayMs(spec), 500);
+      assert.equal(spec.includes(token), false);
+      const report = await readFile(join(directory, "artifacts/report.json"), "utf8");
+      assert.equal(report.includes(token), false);
+      assert.equal(report.includes("resetAuthorization"), false);
+      assert.match(report, /"selectedMs": 500/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the verified scenario when a shorter delay is not confirmed", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-tune-fallback-"));
+    try {
+      const result = await run(directory, token, {
+        args: ["--tune-delays", "--timing-resolution", "500"],
+        minimize: async (input) => {
+          const stage1 = verifiedMinimizeReport(input.scenario, CORE_IDS);
+          stage1.claim = `${stage1.claim} ${token}`;
+          return optimizeVerifiedDuration({
+            scenario: input.scenario,
+            stage1,
+            config: input.tuneDelays ?? { resolutionMs: 500, maxReplayExecutions: 36, maxWallClockMs: 180_000 },
+            now: () => 0,
+            probeFor: () => async () => ({
+              status: "error",
+              durationMs: 1,
+              error: `reset refused for ${token}`,
+              signature: { oracleId: "runner", code: "RUNNER_ERROR", facts: { message: `reset refused for ${token}` } },
+            }),
+          });
+        },
+      });
+      assert.equal(result.code, EXIT.verified, result.stderr);
+      assert.match(result.stdout, /Timing improved: no/);
+      assert.match(result.stdout, /Original verified result retained: yes/);
+      assert.match(result.stdout, /\[redacted\]/);
+      assert.equal(result.stdout.includes(token), false);
+      const spec = await readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8");
+      assert.equal(embeddedDelayMs(spec), 2000);
+      const report = await readFile(join(directory, "artifacts/report.json"), "utf8");
+      assert.equal(report.includes(token), false);
+      assert.match(report, /\[redacted\]/);
+      assert.match(report, /"originalMs": 2000/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 async function run(
@@ -201,6 +290,29 @@ async function run(
     ...(options.minimize !== undefined ? { minimize: options.minimize } : {}),
   });
   return { code, stdout, stderr };
+}
+
+function delayMs(scenario: Scenario): number {
+  const step = scenario.steps.find((candidate) => candidate.kind === "delay");
+  if (step === undefined || step.kind !== "delay") {
+    throw new Error("scenario has no delay step");
+  }
+  return step.ms;
+}
+
+function embeddedDelayMs(source: string): number {
+  const marker = "const scenario = ";
+  const start = source.indexOf(marker);
+  const expressionStart = start + marker.length;
+  const end = source.indexOf(" as ExportedScenario;", expressionStart);
+  const value = vm.runInNewContext(source.slice(expressionStart, end), { JSON }) as {
+    steps: Array<{ kind: string; ms?: number }>;
+  };
+  const delay = value.steps.find((step) => step.kind === "delay");
+  if (delay?.ms === undefined) {
+    throw new Error("exported spec has no delay");
+  }
+  return delay.ms;
 }
 
 function plainReport(status: MinimizeStatus, claim: string): MinimizeReport {

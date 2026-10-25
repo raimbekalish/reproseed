@@ -1,8 +1,11 @@
 import { resolve } from "node:path";
 
+import { cleanStateVerify } from "../core/clean-state.ts";
+import type { DurationOptimization, TimingSearchConfig } from "../core/duration.ts";
 import type { MinimizeReport, MinimizeStatus, Scenario } from "../core/types.ts";
 import { exportPlaywrightTest } from "../export/playwright.ts";
 import { minimizeWithBrowser } from "../runner/minimize-browser.ts";
+import { isDurationTunedResult, type DurationTunedResult } from "../runner/minimize-duration.ts";
 import { prepareReplay } from "../runner/plan.ts";
 import { sanitizeArtifact } from "../runner/report.ts";
 import { resetAndConfirmEmpty, ResetFailed } from "../runner/reset.ts";
@@ -21,7 +24,10 @@ const STATUSES = new Set<MinimizeStatus>([
   "no-reproducible-failure",
 ]);
 
-export type MinimizeRunner = (input: { scenario: Scenario }) => Promise<MinimizeReport>;
+export type MinimizeRunner = (input: {
+  scenario: Scenario;
+  tuneDelays?: TimingSearchConfig;
+}) => Promise<MinimizeReport | DurationTunedResult>;
 export type TargetPreflight = (scenario: Scenario) => Promise<void>;
 
 export type MinimizeCommand = {
@@ -29,6 +35,7 @@ export type MinimizeCommand = {
   reportPath: string;
   specPath: string;
   force: boolean;
+  tuneDelays?: TimingSearchConfig;
   cwd: string;
   env: NodeJS.ProcessEnv;
   stdout: (text: string) => void;
@@ -68,34 +75,57 @@ export async function runMinimizeCommand(input: MinimizeCommand): Promise<number
   await (input.preflight ?? preflightTarget)(scenario);
 
   stderr(`Minimizing ${scenario.steps.length} steps. This runs in Chromium and can take several minutes.\n`);
+  if (input.tuneDelays !== undefined) {
+    stderr(
+      `Delay tuning is on. Resolution ${input.tuneDelays.resolutionMs}ms, at most ${input.tuneDelays.maxReplayExecutions} timing replays and ${input.tuneDelays.maxWallClockMs}ms.\n`,
+    );
+  }
   let report: MinimizeReport;
+  let exportScenario = scenario;
+  let optimization: DurationOptimization | undefined;
   try {
-    report = await (input.minimize ?? defaultMinimize)({ scenario });
+    const result = await (input.minimize ?? defaultMinimize)({
+      scenario,
+      ...(input.tuneDelays !== undefined ? { tuneDelays: input.tuneDelays } : {}),
+    });
+    if (isDurationTunedResult(result)) {
+      report = result.report;
+      exportScenario = result.scenario;
+      optimization = result.optimization;
+    } else {
+      report = result;
+    }
   } catch (error) {
     throw new CliError(error instanceof Error ? error.message : "minimizer failed", EXIT.internal);
   }
+  if (input.tuneDelays !== undefined && optimization === undefined) {
+    throw new CliError("delay tuning did not return a timing report", EXIT.internal);
+  }
 
   assertReportShape(report);
+  if (optimization !== undefined) {
+    assertOptimization(optimization, report);
+  }
   const verified = report.status === "verified-one-minimal";
   let specSource: string | undefined;
   let exportFailure: unknown;
   if (verified) {
     try {
-      specSource = exportPlaywrightTest(scenario, report);
-      assertClean(specSource, scenario, "regression test");
+      specSource = exportPlaywrightTest(exportScenario, report);
+      assertClean(specSource, exportScenario, "regression test");
     } catch (error) {
       exportFailure = error;
       specSource = undefined;
     }
   }
 
-  const artifact = sanitizeArtifact(scenario, report);
+  const artifact = sanitizeArtifact(exportScenario, report, optimization);
   const reportText = `${JSON.stringify(artifact, null, 2)}\n`;
   assertClean(reportText, scenario, "report");
   await writePublishedFile(reportPath, reportText, input.force);
 
   if (exportFailure !== undefined) {
-    stdout(formatSummary({ report, reportPath, specPath: undefined }));
+    stdout(formatSummary({ report, reportPath, specPath: undefined, ...(optimization !== undefined ? { optimization } : {}) }));
     throw new CliError(
       exportFailure instanceof Error ? exportFailure.message : "regression test could not be generated",
       EXIT.internal,
@@ -105,7 +135,7 @@ export async function runMinimizeCommand(input: MinimizeCommand): Promise<number
     try {
       await writePublishedFile(specPath, specSource, input.force);
     } catch (error) {
-      stdout(formatSummary({ report, reportPath, specPath: undefined }));
+      stdout(formatSummary({ report, reportPath, specPath: undefined, ...(optimization !== undefined ? { optimization } : {}) }));
       if (error instanceof CliError) {
         throw error;
       }
@@ -113,15 +143,21 @@ export async function runMinimizeCommand(input: MinimizeCommand): Promise<number
     }
   }
 
-  stdout(formatSummary({ report, reportPath, specPath: specSource !== undefined ? specPath : undefined }));
+  stdout(formatSummary({ report, reportPath, specPath: specSource !== undefined ? specPath : undefined, ...(optimization !== undefined ? { optimization } : {}) }));
   if (!verified && input.force) {
     stderr("Existing spec was not replaced because minimization did not verify.\n");
   }
   return exitCodeForVerified(report.status, specSource !== undefined);
 }
 
-async function defaultMinimize(input: { scenario: Scenario }): Promise<MinimizeReport> {
-  return minimizeWithBrowser({ scenario: input.scenario });
+async function defaultMinimize(input: {
+  scenario: Scenario;
+  tuneDelays?: TimingSearchConfig;
+}): Promise<MinimizeReport | DurationTunedResult> {
+  if (input.tuneDelays === undefined) {
+    return minimizeWithBrowser({ scenario: input.scenario });
+  }
+  return minimizeWithBrowser({ scenario: input.scenario, tuneDelays: input.tuneDelays });
 }
 
 async function preflightTarget(scenario: Scenario): Promise<void> {
@@ -132,6 +168,7 @@ async function preflightTarget(scenario: Scenario): Promise<void> {
       origin: scenario.target.origin,
       expectedAppId: scenario.target.appId,
       resetAuthorization: scenario.target.resetAuthorization,
+      verify: cleanStateVerify(scenario.reset),
       signal: controller.signal,
     });
   } catch (error) {
@@ -169,6 +206,45 @@ function assertReportShape(report: MinimizeReport): void {
   if (!Number.isFinite(report.budget.elapsedMs) || report.budget.elapsedMs < 0) {
     throw new CliError("minimizer elapsed time is not usable", EXIT.internal);
   }
+}
+
+function assertOptimization(optimization: DurationOptimization, report: MinimizeReport): void {
+  const stage3Replays = optimization.stage3?.replays.length ?? 0;
+  if (
+    optimization.totals.stage1Replays !== optimization.stage1.replays.length ||
+    optimization.totals.timingReplays !== optimization.replays.length ||
+    optimization.totals.stage3Replays !== stage3Replays ||
+    optimization.totals.replayExecutions !== optimization.stage1.replays.length + optimization.replays.length + stage3Replays ||
+    optimization.budget.replayExecutions !== optimization.replays.length
+  ) {
+    throw new CliError("timing report replay totals do not add up", EXIT.internal);
+  }
+  if (optimization.timingImproved !== optimization.fullyVerified || optimization.promotion === "improved" !== optimization.fullyVerified) {
+    throw new CliError("timing verification flags disagree", EXIT.internal);
+  }
+  if (optimization.fullyVerified && optimization.retainedOriginal) {
+    throw new CliError("timing fallback flags disagree", EXIT.internal);
+  }
+  if (optimization.fullyVerified) {
+    if (
+      optimization.exportedScenario !== "tuned" ||
+      optimization.stage3 === undefined ||
+      report.status !== "verified-one-minimal" ||
+      !sameIds(report.keptStepIds, optimization.stage3.keptStepIds) ||
+      report.counts.replayExecutions !== optimization.stage3.counts.replayExecutions
+    ) {
+      throw new CliError("tuned result does not match the renewed verification report", EXIT.internal);
+    }
+  } else if (optimization.exportedScenario !== "original" || !sameIds(report.inputStepIds, optimization.stage1.inputStepIds) || report.status !== optimization.stage1.status) {
+    throw new CliError("retained report does not match the original step minimization", EXIT.internal);
+  }
+  if (!Number.isFinite(optimization.budget.elapsedMs) || optimization.budget.elapsedMs < 0) {
+    throw new CliError("timing elapsed time is not usable", EXIT.internal);
+  }
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function assertClean(contents: string, scenario: Scenario, label: string): void {

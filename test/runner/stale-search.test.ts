@@ -2,12 +2,11 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
-
 import { loadScenarioFile } from "../../src/cli/scenario-file.ts";
 import type { ExecutionOutcome, Scenario, Step } from "../../src/core/types.ts";
 import { installMatchedResponseDelay, installOriginGuard } from "../../src/runner/faults.ts";
 import { startReplayRuntime } from "../../src/runner/replay.ts";
+import { launchChromium } from "../../src/runner/session.ts";
 import { startSearchServer, type SearchServer } from "../../examples/stale-search/server.ts";
 
 const APP_ID = "stale-search";
@@ -110,7 +109,7 @@ describe("stale search replay", { concurrency: false }, () => {
 
   it("does not let GET and POST response delays interfere", { timeout: 60_000 }, async () => {
     const demo = await startSearchServer({ port: 0, appId: APP_ID, resetAuthorization: randomBytes(16).toString("hex") });
-    const browser = await chromium.launch({ headless: true });
+    const browser = await launchChromium();
     try {
       const context = await browser.newContext();
       await installOriginGuard(context, demo.origin);
@@ -122,7 +121,7 @@ describe("stale search replay", { concurrency: false }, () => {
       });
       const postDelay = await installMatchedResponseDelay(context, {
         origin: demo.origin,
-        urlIncludes: "/api/records",
+        urlIncludes: "/api/post-probe",
         method: "POST",
         ms: 700,
       });
@@ -143,10 +142,10 @@ describe("stale search replay", { concurrency: false }, () => {
         const identity = await timed("/__reproseed/identity", "GET");
         const home = await timed("/", "GET");
         const beta = await timed("/api/search?q=beta", "GET");
-        const records = await timed("/api/records", "GET");
+        const records = await timed("/api/search-history", "GET");
         const alphabet = await timed("/api/search?q=alphabet", "GET");
         const alpha = await timed("/api/search?q=alpha", "GET");
-        const post = await timed("/api/records", "POST", JSON.stringify({ email: "a@example.com", note: "n" }));
+        const post = await timed("/api/post-probe", "POST", JSON.stringify({ email: "a@example.com", note: "n" }));
         const [parallelBeta, parallelAlpha] = await Promise.all([
           timed("/api/search?q=beta", "GET"),
           timed("/api/search?q=alpha", "GET"),
@@ -157,7 +156,7 @@ describe("stale search replay", { concurrency: false }, () => {
         ["identity", times.identity],
         ["home", times.home],
         ["beta", times.beta],
-        ["records", times.records],
+        ["history", times.records],
         ["alphabet", times.alphabet],
         ["parallel beta", times.parallelBeta],
       ] as const) {

@@ -43,6 +43,9 @@ describe("stale search regression", { concurrency: false }, () => {
       assert.equal(source.includes('toBe("Results for alpha")'), false);
       assert.match(source, /\/api\/search\?q=alpha/);
       assert.match(source, /GET/);
+      assert.match(source, /\/api\/search-history/);
+      assert.match(source, /json-array-empty/);
+      assert.equal(source.includes('"/api/records"'), false);
       const keptIds = report.keptStepIds;
       for (const id of removed) {
         const step = scenario.steps.find((candidate) => candidate.id === id);

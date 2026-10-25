@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { MinimizeReport, Scenario, Step } from "../core/types.ts";
+import { cleanStateVerify } from "../core/clean-state.ts";
+import type { JsonArrayEmptyVerify, MinimizeReport, Scenario, Step } from "../core/types.ts";
 import { embedJson } from "./embed.ts";
 import { selectVerifiedExport } from "./eligibility.ts";
 import { ExportError } from "./export-error.ts";
@@ -21,6 +22,7 @@ type ExportOracle =
 
 type ExportData = {
   oracle: ExportOracle;
+  verify: JsonArrayEmptyVerify;
   steps: ExportStep[];
 };
 
@@ -63,6 +65,7 @@ export { ExportError } from "./export-error.ts";
 function exportData(scenario: Scenario, steps: readonly Step[]): ExportData {
   return {
     oracle: exportOracle(scenario),
+    verify: cleanStateVerify(scenario.reset),
     steps: steps.map(exportStep),
   };
 }

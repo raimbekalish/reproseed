@@ -34,6 +34,10 @@ describe("cli arguments", () => {
     assert.match(minimizeHelp.stdout, new RegExp(`\\n\\s*${EXIT.internal}\\s+The runner`));
     assert.match(minimizeHelp.stdout, /not a global proof/);
     assert.match(minimizeHelp.stdout, /not a minimization failure/);
+    assert.match(minimizeHelp.stdout, /--tune-delays/);
+    assert.match(minimizeHelp.stdout, /--timing-resolution/);
+    assert.match(minimizeHelp.stdout, /250/);
+    assert.match(minimizeHelp.stdout, /not treated as monotonic/);
 
     const version = await capture(["--version"]);
     assert.equal(version.code, EXIT.verified);
@@ -74,6 +78,33 @@ describe("cli arguments", () => {
       specPath: "out/spec.ts",
       force: true,
     });
+
+    const tuned = parseArgs([
+      "minimize",
+      "scenario.json",
+      "--tune-delays",
+      "--timing-resolution",
+      "100",
+      "--timing-max-replays=12",
+      "--timing-max-ms",
+      "5000",
+    ]);
+    assert.deepEqual(tuned, {
+      kind: "minimize",
+      scenarioPath: "scenario.json",
+      reportPath: "artifacts/report.json",
+      specPath: "artifacts/minimized.spec.ts",
+      force: false,
+      tuneDelays: { resolutionMs: 100, maxReplayExecutions: 12, maxWallClockMs: 5000 },
+    });
+
+    const resolutionOnly = await capture(["minimize", "scenario.json", "--timing-resolution", "100"]);
+    assert.equal(resolutionOnly.code, EXIT.usage);
+    assert.match(resolutionOnly.stderr, /require --tune-delays/);
+
+    const badResolution = await capture(["minimize", "scenario.json", "--tune-delays", "--timing-resolution", "0"]);
+    assert.equal(badResolution.code, EXIT.usage);
+    assert.match(badResolution.stderr, /positive integer/);
   });
 });
 

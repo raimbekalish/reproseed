@@ -34,6 +34,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
       reportPath: parsed.reportPath,
       specPath: parsed.specPath,
       force: parsed.force,
+      ...(parsed.tuneDelays !== undefined ? { tuneDelays: parsed.tuneDelays } : {}),
       cwd: io.cwd,
       env: io.env,
       stdout,

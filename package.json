@@ -27,7 +27,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
     "test:demo": "node --test examples/duplicate-submit/*.test.ts",
-    "test:runner": "node --test test/runner/*.test.ts",
+    "test:runner": "node --test --test-concurrency=1 test/runner/safety.test.ts test/runner/replay.test.ts test/runner/minimize-live.test.ts test/runner/stale-search.test.ts test/runner/stale-minimize.test.ts test/runner/minimize-duration-live.test.ts",
     "test:export": "node --test test/export/regression.test.ts test/export/stale-regression.test.ts",
     "test:search": "node --test examples/stale-search/*.test.ts",
     "test:cli": "node --test test/cli/args.test.ts test/cli/scenario.test.ts test/cli/command.test.ts",

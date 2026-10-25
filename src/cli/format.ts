@@ -1,3 +1,4 @@
+import type { DurationOptimization } from "../core/duration.ts";
 import type { MinimizeReport, MinimizeStatus, TargetSignature } from "../core/types.ts";
 import { EXIT, type ExitCode } from "./errors.ts";
 
@@ -22,6 +23,7 @@ export function formatSummary(input: {
   report: MinimizeReport;
   reportPath: string;
   specPath: string | undefined;
+  optimization?: DurationOptimization;
 }): string {
   const removed = input.report.inputStepIds.filter((id) => !input.report.keptStepIds.includes(id));
   const lines = [
@@ -38,9 +40,11 @@ export function formatSummary(input: {
     `Candidate evaluations: ${input.report.counts.candidateEvaluations}`,
     `Cache hits: ${input.report.counts.cacheHits}`,
     `Elapsed: ${input.report.budget.elapsedMs}ms`,
-    `Report: ${input.reportPath}`,
-    `Test: ${input.specPath ?? "not written"}`,
   ];
+  if (input.optimization !== undefined) {
+    lines.push(...timingLines(input.optimization));
+  }
+  lines.push(`Report: ${input.reportPath}`, `Test: ${input.specPath ?? "not written"}`);
   if (input.specPath !== undefined) {
     lines.push(
       input.report.baselineSignature?.oracleId === "dom-text"
@@ -61,4 +65,30 @@ function formatFailure(signature: TargetSignature | undefined): string {
     return `${signature.code} (selector=${signature.facts.selector}, expect=${JSON.stringify(signature.facts.expect)}, actual=${JSON.stringify(signature.facts.actual)})`;
   }
   return `${signature.code} (email=${signature.facts.email}, actual=${signature.facts.actual}, expect=${signature.facts.expect})`;
+}
+
+function timingLines(optimization: DurationOptimization): string[] {
+  const delay = optimization.delayStep;
+  const original = delay === undefined ? "none" : `${delay.originalMs}ms (${delay.id})`;
+  const selected = delay?.selectedMs === undefined ? "none" : `${delay.selectedMs}ms`;
+  const finalDelay =
+    delay?.finalMs !== undefined ? `${delay.finalMs}ms` : optimization.fullyVerified ? "removed" : "none";
+  const extra = optimization.totals.timingReplays + optimization.totals.stage3Replays;
+  return [
+    "Timing optimization: requested",
+    `Timing search: ${optimization.searchStatus}`,
+    `Original delay: ${original}`,
+    `Selected delay: ${selected}`,
+    `Final delay: ${finalDelay}`,
+    `Timing improved: ${optimization.timingImproved ? "yes" : "no"}`,
+    `Timing candidates: ${optimization.candidates.length}`,
+    `Timing replays: ${optimization.totals.timingReplays}`,
+    `Extra replay executions: ${extra}`,
+    `Tuned result fully verified: ${optimization.fullyVerified ? "yes" : "no"}`,
+    `Original verified result retained: ${optimization.retainedOriginal ? "yes" : "no"}`,
+    `Stage replays: step ${optimization.totals.stage1Replays}, timing ${optimization.totals.timingReplays}, tuned verification ${optimization.totals.stage3Replays}`,
+    `Total replay executions: ${optimization.totals.replayExecutions}`,
+    `Timing elapsed: ${optimization.budget.elapsedMs}ms`,
+    `Timing result: ${optimization.claim}`,
+  ];
 }

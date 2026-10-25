@@ -1,3 +1,4 @@
+import { assertCleanStateVerify } from "./clean-state.ts";
 import { ScenarioError, type Oracle, type Scenario, type Step } from "./types.ts";
 
 const STEP_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -153,6 +154,7 @@ export function assertScenario(scenario: Scenario): void {
   if (scenario.reset.method !== "POST" || scenario.reset.path !== "/__reproseed/reset") {
     throw new ScenarioError("reset must be POST /__reproseed/reset");
   }
+  assertCleanStateVerify(scenario.reset);
   assertOracle(scenario.oracle);
   if (scenario.steps.length === 0) {
     throw new ScenarioError("scenario has no steps");

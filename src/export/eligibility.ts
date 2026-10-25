@@ -1,4 +1,5 @@
 import { assertBudget } from "../core/budget.ts";
+import { cleanStateVerify } from "../core/clean-state.ts";
 import { assertScenario, findMissingDependencies, orderIds } from "../core/dependencies.ts";
 import { signaturesEqual } from "../core/signature.ts";
 import type { DuplicateSignature, DomMismatchSignature, ExecutionOutcome, MinimizeReport, Scenario, Signature, Step } from "../core/types.ts";
@@ -190,7 +191,7 @@ function assertSupportedSteps(origin: string, scenario: Scenario, steps: readonl
   if (scenario.oracle.id === "record-count") {
     assertStaysOnOrigin(origin, scenario.oracle.request.path, "oracle path");
   }
-  assertStaysOnOrigin(origin, "/api/records", "record list path");
+  assertStaysOnOrigin(origin, cleanStateVerify(scenario.reset).path, "clean-state path");
   assertStaysOnOrigin(origin, "/__reproseed/reset", "reset path");
   assertStaysOnOrigin(origin, "/__reproseed/identity", "identity path");
   for (const step of steps) {

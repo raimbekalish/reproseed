@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 /**
  * Runs the generated spec in artifacts/. That directory is gitignored, and an explicit
  * testDir keeps Playwright from skipping it. Retries stay off so a flake cannot pass.
+ * `channel: "chromium"` is Playwright's downloaded Chromium, not chrome-headless-shell.
  */
 export default defineConfig({
   testDir: "../../artifacts",
@@ -16,6 +17,7 @@ export default defineConfig({
   reporter: "line",
   use: {
     headless: true,
+    channel: "chromium",
     trace: "off",
     video: "off",
     screenshot: "off",

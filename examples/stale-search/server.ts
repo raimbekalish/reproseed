@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -21,18 +21,9 @@ export type SearchServer = {
   origin: string;
   appId: string | undefined;
   searches: () => string[];
-  postCount: () => number;
   close: () => Promise<void>;
 };
 
-type StoredRecord = {
-  id: string;
-  email: string;
-  note: string;
-  createdAt: number;
-};
-
-const BODY_LIMIT = 64 * 1024;
 const PAGE_HTML = readFileSync(fileURLToPath(new URL("./public/index.html", import.meta.url)), "utf8");
 
 function pageHtml(page: SearchPage | undefined): string {
@@ -92,9 +83,7 @@ export async function startSearchServer(options: SearchServerOptions = {}): Prom
     throw new Error("port must be an integer from 0 through 65535");
   }
   const state: AppState = {
-    records: [],
     searches: [],
-    posts: 0,
     appId: blankToUndefined(options.appId),
     resetAuthorization: blankToUndefined(options.resetAuthorization),
     html: pageHtml(options.page),
@@ -129,7 +118,6 @@ export async function startSearchServer(options: SearchServerOptions = {}): Prom
         origin: `http://${formatHost(address.address)}:${address.port}`,
         appId: state.appId,
         searches: () => [...state.searches],
-        postCount: () => state.posts,
         close: () => closeServer(server),
       });
     });
@@ -162,9 +150,7 @@ function blankToUndefined(value: string | undefined): string | undefined {
 }
 
 type AppState = {
-  records: StoredRecord[];
   searches: string[];
-  posts: number;
   appId: string | undefined;
   resetAuthorization: string | undefined;
   html: string;
@@ -188,12 +174,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     sendJson(response, 200, { query, text: `Results for ${query}` });
     return;
   }
-  if (method === "GET" && url.pathname === "/api/records") {
-    sendJson(response, 200, state.records);
-    return;
-  }
-  if (method === "POST" && url.pathname === "/api/records") {
-    await createRecord(request, response, state);
+  if (method === "GET" && url.pathname === "/api/search-history") {
+    sendJson(response, 200, state.searches);
     return;
   }
   if (method === "GET" && url.pathname === "/__reproseed/identity") {
@@ -211,27 +193,6 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   sendJson(response, 404, { error: "not found" });
 }
 
-async function createRecord(request: IncomingMessage, response: ServerResponse, state: AppState): Promise<void> {
-  const contentType = request.headers["content-type"];
-  if (typeof contentType !== "string" || !contentType.startsWith("application/json")) {
-    sendJson(response, 415, { error: "content type must be application/json" });
-    return;
-  }
-  const record = parseRecord(await readBody(request, BODY_LIMIT));
-  if (record === undefined) {
-    sendJson(response, 400, { error: "email is required" });
-    return;
-  }
-  state.records.push({
-    id: randomUUID(),
-    email: record.email,
-    note: record.note,
-    createdAt: Date.now(),
-  });
-  state.posts += 1;
-  sendJson(response, 201, { ok: true });
-}
-
 function resetState(request: IncomingMessage, response: ServerResponse, state: AppState): void {
   if (state.appId === undefined || state.resetAuthorization === undefined) {
     sendJson(response, 404, { error: "not found" });
@@ -246,30 +207,9 @@ function resetState(request: IncomingMessage, response: ServerResponse, state: A
     sendJson(response, 403, { error: "reset refused" });
     return;
   }
-  state.records.splice(0, state.records.length);
   state.searches.splice(0, state.searches.length);
   response.writeHead(204, { "cache-control": "no-store" });
   response.end();
-}
-
-function parseRecord(body: string): { email: string; note: string } | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return undefined;
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    return undefined;
-  }
-  const candidate = parsed as { email?: unknown; note?: unknown };
-  if (typeof candidate.email !== "string" || candidate.email.trim() === "" || candidate.email.length > 320) {
-    return undefined;
-  }
-  if (candidate.note !== undefined && (typeof candidate.note !== "string" || candidate.note.length > 2_000)) {
-    return undefined;
-  }
-  return { email: candidate.email.trim(), note: typeof candidate.note === "string" ? candidate.note : "" };
 }
 
 function tokensMatch(expected: string, presented: string): boolean {
@@ -283,36 +223,6 @@ function tokensMatch(expected: string, presented: string): boolean {
 
 function singleHeader(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-function readBody(request: IncomingMessage, limit: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let settled = false;
-    const finish = (error: Error | undefined, body?: string): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (error !== undefined) {
-        request.destroy();
-        reject(error);
-        return;
-      }
-      resolve(body ?? "");
-    };
-    request.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > limit) {
-        finish(new Error("body too large"));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    request.on("end", () => finish(undefined, Buffer.concat(chunks).toString("utf8")));
-    request.on("error", (error) => finish(error));
-  });
 }
 
 function sendHtml(response: ServerResponse, html: string): void {
