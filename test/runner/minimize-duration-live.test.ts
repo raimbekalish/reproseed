@@ -40,6 +40,15 @@ const TUNE = {
   maxWallClockMs: DEFAULT_TIMING_MAX_WALL_CLOCK_MS,
 };
 
+/**
+ * The default 250ms grid includes 50ms for an 800ms search delay. Two samples can
+ * still show the stale overwrite, and renewed minimization can then find no failure
+ * because the runner spends longer than 50ms between the searches. The tuner keeps
+ * the original scenario in that case. This live check uses a 400ms grid so the
+ * measured candidate stays long enough to reproduce on a GitHub-hosted runner.
+ */
+const STALE_TIMING_RESOLUTION_MS = 400;
+
 describe("verified delay reduction in chromium", { concurrency: false }, () => {
   it("tunes the duplicate-submit POST delay and exports that duration", { timeout: 1_200_000 }, async () => {
     const token = randomBytes(16).toString("hex");
@@ -114,7 +123,7 @@ describe("verified delay reduction in chromium", { concurrency: false }, () => {
         scenario,
         reportPath: STALE_REPORT,
         fetchImpl: observed.fetchImpl,
-        tuneDelays: TUNE,
+        tuneDelays: { ...TUNE, resolutionMs: STALE_TIMING_RESOLUTION_MS },
       });
       assert.equal(JSON.stringify(scenario.steps), beforeSteps);
       assert.equal(delayMs(scenario, "slow-alpha"), 800);
@@ -124,6 +133,7 @@ describe("verified delay reduction in chromium", { concurrency: false }, () => {
       assertCleanResets(observed.events, optimization.totals.replayExecutions, "/api/search-history", token, "stale-search");
       assert.equal(optimization.timingImproved, true, JSON.stringify(candidateDump(optimization)));
       assertPromoted(optimization, result.report.baselineSignature);
+      assert.equal(optimization.delayStep?.finalMs, STALE_TIMING_RESOLUTION_MS);
       assert.equal(delayMs(result.scenario, "slow-alpha"), optimization.delayStep?.finalMs);
       await writePlaywrightTest(STALE_SPEC, result.scenario, result.report);
       const source = await readFile(STALE_SPEC, "utf8");

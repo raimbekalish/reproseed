@@ -167,7 +167,7 @@ Output paths must stay inside the current directory and must not traverse a syml
 
 The default grid is 250ms, with at most 36 timing replays and 180000ms of timing-stage wall clock. Those limits are separate from the scenario budget. Override them with `--timing-resolution`, `--timing-max-replays`, and `--timing-max-ms`. The search measures at most 4 coarse durations and 4 finer ones. It reports the smallest confirmed duration among the durations it actually replayed. It does not claim anything about a duration it did not run.
 
-One kept delay can be tuned. Several kept delays are skipped. A shorter delay is exported only after a new minimization and five fresh verification replays reproduce the original failure. Otherwise the original verified scenario is exported unchanged.
+One kept delay can be tuned. Several kept delays are skipped. Two agreeing samples are not enough to export a shorter delay. That delay is exported only after a new minimization and five fresh verification replays reproduce the original failure. Otherwise the original verified scenario is exported unchanged. A very short delay can pass the two samples and then miss the later check when the machine spends longer than the delay between the two requests. The stale-search live test uses a 400ms grid so its measured candidate stays above that gap on a GitHub-hosted runner. The duplicate-submit live test keeps the default 250ms grid.
 
 `reproseed --help` and `reproseed minimize --help` print the same contract.
 
