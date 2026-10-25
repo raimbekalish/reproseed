@@ -1,0 +1,27 @@
+name: Feature request
+description: A proposed change to ReproSeed.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ReproSeed minimizes a failing scenario against an authorized loopback test app and writes a Playwright regression test. It does not target production websites.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is difficult or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: limits
+    attributes:
+      label: Boundaries
+      description: Say whether this still requires an authorized loopback target, and what it should refuse.
+    validations:
+      required: true
