@@ -9,8 +9,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const VERSION = (JSON.parse(await readFile(join(REPO, "package.json"), "utf8")) as { version: string }).version;
 
+const COPYRIGHT = "Copyright (c) 2026 Raimbek Alish";
+
 const REQUIRED = [
   "package/package.json",
+  "package/LICENSE",
   "package/README.md",
   "package/dist/cli.js",
   "package/dist/export/runtime-config.ts",
@@ -19,6 +22,9 @@ const REQUIRED = [
   "package/examples/duplicate-submit/scenario.json",
   "package/examples/stale-search/scenario.json",
 ] as const;
+
+const FORBIDDEN_NAME =
+  /(^|\/)\.env($|\.)|\/artifacts\/|playwright-output|test-results|report\.json|minimized\.spec|\.pem$|id_rsa|credentials\.json/i;
 
 const COPIED_ASSETS = [
   ["package/dist/export/runtime-config.ts", "src/export/runtime-config.ts"],
@@ -47,11 +53,19 @@ describe("npm package smoke", () => {
       const manifest = JSON.parse(await tarFile(tarball, "package/package.json")) as {
         private?: boolean;
         version?: string;
+        license?: string;
         bin?: { reproseed?: string };
       };
       assert.equal(manifest.private, true);
       assert.equal(manifest.version, VERSION);
+      assert.equal(manifest.license, "MIT");
       assert.equal(manifest.bin?.reproseed, "./dist/cli.js");
+      const license = await tarFile(tarball, "package/LICENSE");
+      assert.equal(license, await readFile(join(REPO, "LICENSE"), "utf8"));
+      assert.equal(license.startsWith(`MIT License\n\n${COPYRIGHT}\n`), true);
+      for (const name of names) {
+        assert.equal(FORBIDDEN_NAME.test(name), false, name);
+      }
       for (const [packedPath, sourcePath] of COPIED_ASSETS) {
         assert.equal(await tarFile(tarball, packedPath), await readFile(join(REPO, sourcePath), "utf8"));
       }

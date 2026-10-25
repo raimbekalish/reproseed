@@ -34,8 +34,13 @@ No version has been released. `0.1.0` in `package.json` is the current unpublish
 
 ## Reporting a vulnerability
 
-GitHub private vulnerability reporting is not enabled for this repository. The maintainer has not published a private contact method.
+Private vulnerability reporting is enabled. Report a vulnerability through GitHub, not in a public issue:
 
-Do not open a public issue, pull request, or discussion that includes an exploitable vulnerability, a proof of concept, or step-by-step exploit details. A public bug report is for defects that are safe to describe in the open, with credentials removed. Use the bug-report template for those.
+1. Open [Security → Advisories](https://github.com/raimbekalish/reproseed/security/advisories).
+2. Choose **Report a vulnerability**. The form is [this repository's private advisory form](https://github.com/raimbekalish/reproseed/security/advisories/new).
 
-Until the maintainer chooses and documents a private channel, do not post exploit details in this repository while waiting for that channel.
+GitHub keeps that report visible to the repository maintainers. It is not a public issue.
+
+Do not open a public issue, pull request, or discussion that includes an exploitable vulnerability, a proof of concept, or step-by-step exploit details. A public bug report is only for defects that are safe to describe in the open, with credentials removed. Use the bug-report template for those.
+
+There is no security email address. This policy does not promise a response time.

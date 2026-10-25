@@ -2,7 +2,7 @@
 
 ReproSeed is a local command-line tool. You give it a failing scenario for an authorized loopback test application. It deletes steps that are not required for that failure, then writes a Playwright regression test for the steps that remain.
 
-The current version is `0.1.0`. The package is private and has not been published to npm. A license has not been chosen yet. See [Release status](#release-status).
+The current version is `0.1.0`. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0. The npm package is private and has not been published.
 
 ## What it currently supports
 
@@ -223,7 +223,7 @@ Package check, without publishing:
 npm run test:package
 ```
 
-That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help` and `reproseed --version` must succeed from that install. `--version` prints `0.1.0`. The tarball contains `dist/`, this README, and the two example scenario files. It does not contain credentials, `artifacts/`, or `src/`.
+That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help` and `reproseed --version` must succeed from that install. `--version` prints `0.1.0`. The tarball contains `LICENSE`, `dist/` (including the embedded `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` assets), this README, and the two example scenario files. It does not contain credentials, `.env` files, `artifacts/`, test results, `node_modules`, or the TypeScript source tree.
 
 ## Continuous integration
 
@@ -241,4 +241,4 @@ A new push to the same pull request cancels the previous run. The badge shows th
 
 ## Release status
 
-`0.1.0` is the current unpublished development version. `package.json` sets `private: true`. There is no npm publication, no git tag, and no GitHub Release. There is no `LICENSE` file. [docs/licensing-proposal.md](docs/licensing-proposal.md) compares MIT and Apache-2.0 for the owner to approve. [CHANGELOG.md](CHANGELOG.md) describes this unpublished tree. [docs/release-checklist.md](docs/release-checklist.md) is the checklist for a future release. Do not publish or tag from a pull request.
+`0.1.0` is the current unpublished development version. `package.json` sets `private: true` and `license` to `MIT`. There is no npm publication, no git tag, and no GitHub Release. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) describes this unpublished tree. [docs/release-checklist.md](docs/release-checklist.md) is the checklist for a future release. Do not publish or tag from a pull request.
