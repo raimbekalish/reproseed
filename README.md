@@ -2,7 +2,23 @@
 
 ReproSeed is a local command-line tool. You give it a failing scenario for an authorized loopback test application. It deletes steps that are not required for that failure, then writes a Playwright regression test for the steps that remain.
 
-The current version is `0.1.0`. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0. The package manifest is publishable. No version has been published to npm.
+The current version is `0.1.0`, released October 25, 2026. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
+
+## Install
+
+```bash
+npm install reproseed
+npx reproseed --help
+npx reproseed --version
+```
+
+That install provides the `reproseed` command and the `playwright` dependency. The browser is Playwright 1.64.1's downloaded Chromium, selected with `channel: "chromium"`. It is not system Chrome and not `chrome-headless-shell`. Install that browser with:
+
+```bash
+npx playwright install --with-deps --no-shell chromium
+```
+
+A generated spec imports `@playwright/test`. That package is not installed with `reproseed`. Running the spec needs Node.js 22 or newer, `@playwright/test` at Playwright 1.64.1, the Chromium above, `REPROSEED_ORIGIN`, `REPROSEED_APP_ID`, `REPROSEED_RESET_AUTHORIZATION`, and a loopback application you started. The demo servers are in this git repository. They are not in the npm package. The quick start below is for that repository checkout.
 
 ## What it currently supports
 
@@ -241,18 +257,4 @@ A new push to the same pull request cancels the previous run. The badge shows th
 
 ## Release status
 
-`0.1.0` is the current unpublished version. `package.json` sets `license` to `MIT` and does not set `private`. There is no npm publication, no git tag, and no GitHub Release. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) holds the drafted 0.1.0 notes under `Unreleased`. [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md) is that draft. [docs/publish-runbook.md](docs/publish-runbook.md) is the owner procedure for publication. Do not publish or tag from a pull request.
-
-## Registry install, after publication
-
-This package is not on the npm registry. `npm install reproseed` does not install ReproSeed today, because no version has been published. The manifest no longer sets `private`, which makes a later publish possible. It does not publish the package.
-
-After the owner publishes `0.1.0`, the install command is expected to be:
-
-```bash
-npm install reproseed
-npx reproseed --help
-npx reproseed --version
-```
-
-That install would provide the `reproseed` command and its `playwright` dependency. It would not include the demo servers, the repository Playwright config, or `@playwright/test`. Running a generated spec would still require Node.js 22 or newer, `@playwright/test` at this repository's Playwright version, Playwright's downloaded Chromium, `REPROSEED_ORIGIN`, `REPROSEED_APP_ID`, `REPROSEED_RESET_AUTHORIZATION`, and a loopback app you started. Until that publication, use the quick start from a git checkout. The publication steps are [docs/publish-runbook.md](docs/publish-runbook.md). They are not done from this tree.
+`0.1.0` (October 25, 2026) is the first release. `package.json` sets `license` to `MIT` and does not set `private`. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) and [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md) describe this version. There are no earlier releases. Do not publish or tag from a pull request.
