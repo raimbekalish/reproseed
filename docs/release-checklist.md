@@ -1,6 +1,6 @@
 # Release checklist
 
-Use this list before the first real release. Nothing here has been done as a release. Version `0.1.0` stays unpublished, `private: true` stays set, and this checklist does not create a tag, a GitHub Release, or an npm publication.
+Use this list before the first real release. Nothing here has been done as a release. Version `0.1.0` stays unpublished, `private: true` stays set, and this checklist does not create a tag, a GitHub Release, or an npm publication. The ordered owner procedure, including which commands are irreversible, is [publish-runbook.md](publish-runbook.md). The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md).
 
 Complete every item on the commit you intend to release. Record the commit SHA next to the checks you ran.
 
@@ -25,7 +25,7 @@ Complete every item on the commit you intend to release. Record the commit SHA n
 - [ ] `npm pack --dry-run` lists only the intended files: `package.json`, `LICENSE`, `README.md`, `dist/`, and the two example scenario files, plus the compiled JavaScript under `dist/`.
 - [ ] The tarball contains `LICENSE` with `Copyright (c) 2026 Raimbek Alish`, and `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts`.
 - [ ] The tarball does not contain `src/`, `artifacts/`, test results, `.env`, credentials, or a reset token.
-- [ ] `private` is still `true` until the owner deliberately publishes. Publishing requires removing `private` or using a one-off publish path the owner has written down. Do not publish as part of a documentation change.
+- [ ] `private` stays `true` in documentation and preparation commits. The release commit that removes it must also update `test/package/smoke.test.ts`, which asserts `manifest.private === true`. That update checks the publishable manifest and keeps the `LICENSE`, executable, credential-exclusion, and clean-install assertions. Check `package-lock.json` still matches `package.json`, and require the whole CI workflow to be green on that commit before a tag or publish. Do not make that test change in a documentation pull request.
 
 ## Platforms
 
@@ -38,7 +38,7 @@ Complete every item on the commit you intend to release. Record the commit SHA n
 - [ ] README quick start, both examples, step minimization, `--tune-delays`, report inspection, and the exported-test command match the release.
 - [ ] Supported oracles and the loopback restrictions match the code.
 - [ ] README does not claim production websites, AI, a hosted service, or a license that has not been committed.
-- [ ] [CHANGELOG.md](../CHANGELOG.md) has an entry for this version and no invented dates for versions that were never released.
+- [ ] [CHANGELOG.md](../CHANGELOG.md) has an entry for this version and no invented dates for versions that were never released. The drafted 0.1.0 text stays under `Unreleased` until the publication commit in [publish-runbook.md](publish-runbook.md). That commit sets the heading and the real publication date.
 
 ## License
 
@@ -64,10 +64,10 @@ MIT is already the license for ReproSeed source. [../LICENSE](../LICENSE) contai
 
 ## npm
 
-- [ ] The package name `reproseed` is available, or the owner has chosen another name.
-- [ ] `npm publish` is a separate, explicit step. CI must not publish.
+- [ ] `npm view reproseed` was run again on the publication day. A 404 means the name is not currently visible. It does not reserve `reproseed` and it does not prove the signed-in account may create it. If the name is taken, choose another name before publishing.
+- [ ] `npm publish` is a separate, explicit step. CI must not publish. `npm stage publish` is also a publication for a new name, because it creates a public `0.0.0-stage` placeholder. Do not stage unless [publish-runbook.md](publish-runbook.md) is followed on npm CLI 11.15.0 or later.
 - [ ] The published tarball was inspected with `npm pack` first.
-- [ ] Two-factor authentication for publish is required on the npm account the owner uses.
+- [ ] The publishing account has two-factor authentication for writes (`tfa.mode` `auth-and-writes`), and the publish is an interactive `npm publish` that prompts for the second factor. Reconfirm this on the publication day. Do not print the account name into the checklist.
 
 ## After publication
 

@@ -241,4 +241,18 @@ A new push to the same pull request cancels the previous run. The badge shows th
 
 ## Release status
 
-`0.1.0` is the current unpublished development version. `package.json` sets `private: true` and `license` to `MIT`. There is no npm publication, no git tag, and no GitHub Release. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) describes this unpublished tree. [docs/release-checklist.md](docs/release-checklist.md) is the checklist for a future release. Do not publish or tag from a pull request.
+`0.1.0` is the current unpublished development version. `package.json` sets `private: true` and `license` to `MIT`. There is no npm publication, no git tag, and no GitHub Release. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) holds the drafted 0.1.0 notes under `Unreleased`. [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md) is that draft. [docs/publish-runbook.md](docs/publish-runbook.md) is the owner procedure for a later publication. Do not publish or tag from a pull request.
+
+## Registry install, after publication
+
+This package is not on the npm registry. `npm install reproseed` does not install ReproSeed today, because `private` is `true` and no version has been published.
+
+After the owner publishes `0.1.0`, the install command is expected to be:
+
+```bash
+npm install reproseed
+npx reproseed --help
+npx reproseed --version
+```
+
+That install would provide the `reproseed` command and its `playwright` dependency. It would not include the demo servers, the repository Playwright config, or `@playwright/test`. Running a generated spec would still require Node.js 22 or newer, `@playwright/test` at this repository's Playwright version, Playwright's downloaded Chromium, `REPROSEED_ORIGIN`, `REPROSEED_APP_ID`, `REPROSEED_RESET_AUTHORIZATION`, and a loopback app you started. Until that publication, use the quick start from a git checkout. The publication steps are [docs/publish-runbook.md](docs/publish-runbook.md). They are not done from this tree.
