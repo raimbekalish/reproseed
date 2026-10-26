@@ -1,6 +1,6 @@
 # Security policy
 
-ReproSeed resets and drives a local test application. The rules below are the product's safety boundary. There is no published release. The only development line is unpublished version `0.1.0` on `main`.
+ReproSeed resets and drives a local test application. The rules below are the product's safety boundary. Version 0.1.0, released October 25, 2026, is the supported release.
 
 ## Authorized targets
 
@@ -30,7 +30,12 @@ Production targets are unsupported. The tool has no model for production account
 
 ## Supported versions
 
-No version has been released. `0.1.0` in `package.json` is the current unpublished version. The manifest does not set `private`. There is no git tag and no GitHub Release. Older commits are not supported releases. Security fixes, when there is a release process, would apply to the version the owner has actually published. That process is described in [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md). It has not been used.
+| Version | Supported |
+| --- | --- |
+| 0.1.0, released October 25, 2026 | Yes |
+| Older commits | No |
+
+0.1.0 is the first release. There is no earlier supported version. Security fixes apply to that release. The release procedure is [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md).
 
 ## Reporting a vulnerability
 

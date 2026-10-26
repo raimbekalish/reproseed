@@ -63,7 +63,7 @@ If npm Trust & Safety classifies the package differently, stop and reassess befo
 1. Confirm `npm whoami` succeeds and `tfa.mode` is `auth-and-writes`. If it does not, complete the manual `npm login` step above.
 2. Run `npm view reproseed` again. A 404 means the name is not currently visible. It still does not reserve the name. If the name belongs to someone else, stop and choose another name before any publish.
 3. On the commit you intend to release, confirm version `0.1.0`, MIT, the copyright line, green CI for all three jobs, and a packed tarball that contains `LICENSE`, `dist/cli.js`, the three exporter assets, `README.md`, and the two scenario files, and contains no `.env`, credentials, reports, or `src/`.
-4. Leave the changelog heading `Unreleased`. Do not tag. Do not publish from the candidate branch.
+4. The publication-day notes use the heading `0.1.0` dated October 25, 2026. Do not tag or publish until the push-triggered CI run on that merged commit is green and the owner approves those two steps.
 
 The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md). The checks to tick are [release-checklist.md](release-checklist.md).
 
@@ -72,9 +72,9 @@ The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md). The ch
 Do not perform this list as part of documentation or CI.
 
 1. The publishable candidate removes `"private": true`, updates `test/package/smoke.test.ts` so the packed manifest has no `private` property, and checks `package-lock.json`. It keeps version `0.1.0`, the MIT license, and the changelog heading `Unreleased`. Merging that candidate still does not publish.
-2. On the publication day, make a separate commit that moves the changelog heading from `Unreleased` to `0.1.0` and sets the release date to that day. Point the README registry section at the command that will work after publish. Do not change the version away from `0.1.0`.
-3. Run `npm pack --dry-run` on that publication-day commit. Confirm `private` is absent, `license` is `MIT`, and the file list is still the intended one.
-4. Run the whole CI workflow on that publication-day commit. Quality and build, Chromium integration, and Package smoke verification must be green on that exact SHA before any tag or `npm publish`. A green run of the earlier candidate is not that check.
+2. The publication-day commit, dated October 25, 2026, moves the changelog heading to `0.1.0` and documents `npm install reproseed`. It does not change the version. It does not tag or publish.
+3. Run `npm pack --dry-run` on that commit. Confirm `private` is absent, `license` is `MIT`, and the file list is still the intended one.
+4. After that commit is merged, run the whole CI workflow from the push to `main`. Quality and build, Chromium integration, and Package smoke verification must be green on that exact SHA. The pull-request run is not a substitute. Do not tag or run `npm publish` until the owner approves those steps.
 5. Create the annotated tag only after those checks pass:
 
    ```bash

@@ -1,6 +1,6 @@
 # Release checklist
 
-Use this list before the first real release. Nothing here has been published. Version `0.1.0` stays unpublished. The publishable candidate removes `private` and does not create a tag, a GitHub Release, or an npm publication. The ordered owner procedure, including which commands are irreversible, is [publish-runbook.md](publish-runbook.md). The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md).
+Use this list for the 0.1.0 release dated October 25, 2026. The publication-day documentation uses that date. The annotated tag and `npm publish` stay separate owner steps in [publish-runbook.md](publish-runbook.md). The notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md).
 
 Complete every item on the commit you intend to release. Record the commit SHA next to the checks you ran.
 
@@ -25,7 +25,7 @@ Complete every item on the commit you intend to release. Record the commit SHA n
 - [ ] `npm pack --dry-run` lists only the intended files: `package.json`, `LICENSE`, `README.md`, `dist/`, and the two example scenario files, plus the compiled JavaScript under `dist/`.
 - [ ] The tarball contains `LICENSE` with `Copyright (c) 2026 Raimbek Alish`, and `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts`.
 - [ ] The tarball does not contain `src/`, `artifacts/`, test results, `.env`, credentials, or a reset token.
-- [ ] The publishable candidate removes `private` and updates `test/package/smoke.test.ts` so the packed manifest has no `private` property. That test still checks `LICENSE`, the executable, credential exclusion, and a clean install. `package-lock.json` still matches `package.json`. The changelog stays `Unreleased` until the publication-day commit, which dates `0.1.0` and then needs a fresh green CI run on that exact SHA before a tag or publish.
+- [ ] The packed manifest has no `private` property. The package smoke test checks that, and it still checks `LICENSE`, the executable, credential exclusion, and a clean install. `package-lock.json` matches `package.json`. The changelog heading is `0.1.0` dated 2026-10-25. The push-triggered CI run on that commit must be green before a tag or publish.
 
 ## Platforms
 
@@ -38,7 +38,7 @@ Complete every item on the commit you intend to release. Record the commit SHA n
 - [ ] README quick start, both examples, step minimization, `--tune-delays`, report inspection, and the exported-test command match the release.
 - [ ] Supported oracles and the loopback restrictions match the code.
 - [ ] README does not claim production websites, AI, a hosted service, or a license that has not been committed.
-- [ ] [CHANGELOG.md](../CHANGELOG.md) has an entry for this version and no invented dates for versions that were never released. The drafted 0.1.0 text stays under `Unreleased` until the publication commit in [publish-runbook.md](publish-runbook.md). That commit sets the heading and the real publication date.
+- [ ] [CHANGELOG.md](../CHANGELOG.md) has a `0.1.0` entry dated 2026-10-25 and does not invent earlier releases.
 
 ## License
 
