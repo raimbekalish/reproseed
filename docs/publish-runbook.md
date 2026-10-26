@@ -50,11 +50,13 @@ npm's Dual-Use Content Policy covers security-relevant packages whose capabiliti
 
 and a text-only `DISCLOSURE` file at the root of the published tarball. Once published, that declaration cannot be removed without npm Trust & Safety review. A declared package may be published directly only from an interactive two-factor session. Other methods, including trusted publishing and bypass-2FA tokens, must stage first and enforce 2FA when the stage is promoted.
 
-ReproSeed does not fall under that category. It minimizes a failing UI scenario and writes a regression test. The fault it injects is a network delay inside an authorized loopback test, plus a reset that is refused unless the origin is loopback, the app id matches, and the reset credential is accepted. It does not scan hosts, exploit vulnerabilities, obfuscate code, collect credentials, or ship an attack payload. Driving Chromium through Playwright is ordinary test automation. Playwright itself is the runtime dependency and is not treated here as dual-use.
+This repository's assessment is that the current package does not fall under that category. That is a reasoned reading of the policy against ReproSeed's behavior. It is not a binding decision by npm Trust & Safety.
+
+The basis for that reading: ReproSeed minimizes a failing UI scenario and writes a regression test. The fault it injects is a network delay inside an authorized loopback test, plus a reset that is refused unless the origin is loopback, the app id matches, and the reset credential is accepted. It does not scan hosts, exploit vulnerabilities, obfuscate code, collect credentials, or ship an attack payload. Driving Chromium through Playwright is ordinary test automation.
 
 This preparation therefore does not add `contentPolicy` or `DISCLOSURE`. Adding them would misstate the package and would permanently restrict later publishes.
 
-If npm Trust & Safety later classifies a publish as dual-use, stop. Do not retry with a bypass token. The owner would then add the metadata and `DISCLOSURE` above, document the legitimate loopback-only use, and publish only through an interactive 2FA session or through staged publishing with 2FA at promotion.
+If npm Trust & Safety classifies the package differently, stop and reassess before another publish attempt. Do not retry with a bypass token. The owner would then add the metadata and `DISCLOSURE` above, document the legitimate loopback-only use, and publish only through an interactive 2FA session or through staged publishing with 2FA at promotion.
 
 ## Preparation, safe to repeat
 
@@ -69,10 +71,12 @@ The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md). The ch
 
 Do not perform this list as part of documentation or CI.
 
-1. Create the release commit on `main`. In that commit only: remove `"private": true`, change the changelog heading from `Unreleased` to `0.1.0`, and set the release date to the actual publication day. Point the README registry section at the command that will work after publish. Do not change the version away from `0.1.0` for this first publication.
-2. Run `npm pack --dry-run` and inspect the tarball from that commit. Confirm `private` is absent, `license` is `MIT`, and the file list is still the intended one.
-3. Wait until Quality and build, Chromium integration, and Package smoke verification are green on that exact SHA.
-4. Create the annotated tag only after those checks pass:
+1. Create the release commit on `main`. In that commit, remove `"private": true` on purpose. Also change the changelog heading from `Unreleased` to `0.1.0`, set the release date to the actual publication day, and point the README registry section at the command that will work after publish. Do not change the version away from `0.1.0` for this first publication. Do not make this commit as part of a documentation-only change.
+2. In that same commit, update `test/package/smoke.test.ts`. It currently asserts `manifest.private === true`. Removing the field without updating that assertion makes Package smoke verification fail. The new assertion must accept the intended publishable manifest: `private` absent, version `0.1.0`, and `license` still `MIT`. Keep every other package check: `LICENSE` and its copyright line, the executable CLI, the exporter assets, the scenario files, rejection of credentials and generated artifacts, and `--help` / `--version` from a clean install outside the checkout.
+3. Check `package-lock.json` in that same commit. `npm ci` must still install from the lockfile. The lockfile's root name, version, and dependency tree must still match `package.json`. Include a lockfile update only when removing `private` actually changes it.
+4. Run `npm pack --dry-run` and inspect the tarball from that commit. Confirm `private` is absent, `license` is `MIT`, and the file list is still the intended one.
+5. Run the whole CI workflow on that release commit. Quality and build, Chromium integration, and Package smoke verification must be green on that exact SHA before any tag or `npm publish`.
+6. Create the annotated tag only after those checks pass:
 
    ```bash
    git tag -a v0.1.0 <release-sha> -m "ReproSeed 0.1.0"
@@ -80,9 +84,9 @@ Do not perform this list as part of documentation or CI.
    ```
 
    Do not move the tag and do not force-push it.
-5. From a checkout of that SHA, with the authenticated account, run `npm publish`. Complete the two-factor prompt. Do not run it from GitHub Actions. Do not use `npm stage publish` unless the owner has switched to npm CLI 11.15.0 or later and has accepted the public `0.0.0-stage` placeholder.
-6. Wait for the registry scan, then run `npm view reproseed version` and confirm `0.1.0`. In a clean directory, `npm install reproseed` and run `reproseed --help` and `reproseed --version`.
-7. Optionally create a GitHub Release from the tag `v0.1.0`. Use the drafted notes. Do not attach secrets or `artifacts/`.
+7. From a checkout of that SHA, with the authenticated account, run `npm publish`. Complete the two-factor prompt. Do not run it from GitHub Actions. Do not use `npm stage publish` unless the owner has switched to npm CLI 11.15.0 or later and has accepted the public `0.0.0-stage` placeholder.
+8. Wait for the registry scan, then run `npm view reproseed version` and confirm `0.1.0`. In a clean directory, `npm install reproseed` and run `reproseed --help` and `reproseed --version`.
+9. Optionally create a GitHub Release from the tag `v0.1.0`. Use the drafted notes. Do not attach secrets or `artifacts/`.
 
 ## Commands that stay unauthorized
 
