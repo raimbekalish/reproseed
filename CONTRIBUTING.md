@@ -60,7 +60,7 @@ npm run test:cli
 npm run test:package
 ```
 
-`npm run test:package` builds, packs, and installs the private tarball outside the checkout. It does not publish.
+`npm run test:package` builds, packs, and installs the tarball outside the checkout. It does not publish.
 
 ## Browser integration tests
 
@@ -101,7 +101,7 @@ Use the pull-request template. In the description, say what behavior changed and
 - Preserve failure signatures, the five final verification replays, loopback reset rules, and the current CLI contract unless the pull request is explicitly about one of those and says so.
 - CI on the pull-request head has to pass before the change is ready. The three jobs are Quality and build, Chromium integration, and Package smoke verification.
 - Do not publish to npm, create a GitHub Release, or push a git tag from a contribution.
-- Leave `private: true` and version `0.1.0` unchanged unless the owner is cutting a release.
+- Leave version `0.1.0` unchanged. Do not publish, tag, or create a GitHub Release from a contribution. Publication remains the owner's step in [docs/publish-runbook.md](docs/publish-runbook.md).
 
 ## Coding and testing
 
