@@ -30,7 +30,7 @@ Production targets are unsupported. The tool has no model for production account
 
 ## Supported versions
 
-No version has been released. `0.1.0` in `package.json` is the current unpublished development version, and `private` is `true`. There is no git tag and no GitHub Release. Older commits are not supported releases. Security fixes, when there is a release process, would apply to the version the owner has actually published. That process is described in [docs/release-checklist.md](docs/release-checklist.md) and has not been used.
+No version has been released. `0.1.0` in `package.json` is the current unpublished development version, and `private` is `true`. There is no git tag and no GitHub Release. Older commits are not supported releases. Security fixes, when there is a release process, would apply to the version the owner has actually published. That process is described in [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md). It has not been used.
 
 ## Reporting a vulnerability
 

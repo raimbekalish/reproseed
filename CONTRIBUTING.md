@@ -45,7 +45,7 @@ Generate reset credentials in the shell when you need a demo. Do not commit them
 | `examples/stale-search` | DOM-text demo and scenario |
 | `test` | Unit tests and browser integration |
 | `scripts` | Export-asset copy and the CI Chromium installer |
-| `docs` | Design notes, the release checklist, and the record of the MIT license decision |
+| `docs` | Design notes, the release checklist, the unpublished 0.1.0 notes, the publish runbook, and the record of the MIT license decision |
 | `.github` | CI workflow and issue/pull-request templates |
 
 ## Fast checks
