@@ -1,6 +1,6 @@
 # Release checklist
 
-Use this list before the first real release. Nothing here has been done as a release. Version `0.1.0` stays unpublished, `private: true` stays set, and this checklist does not create a tag, a GitHub Release, or an npm publication. The ordered owner procedure, including which commands are irreversible, is [publish-runbook.md](publish-runbook.md). The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md).
+Use this list before the first real release. Nothing here has been published. Version `0.1.0` stays unpublished. The publishable candidate removes `private` and does not create a tag, a GitHub Release, or an npm publication. The ordered owner procedure, including which commands are irreversible, is [publish-runbook.md](publish-runbook.md). The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md).
 
 Complete every item on the commit you intend to release. Record the commit SHA next to the checks you ran.
 
@@ -25,7 +25,7 @@ Complete every item on the commit you intend to release. Record the commit SHA n
 - [ ] `npm pack --dry-run` lists only the intended files: `package.json`, `LICENSE`, `README.md`, `dist/`, and the two example scenario files, plus the compiled JavaScript under `dist/`.
 - [ ] The tarball contains `LICENSE` with `Copyright (c) 2026 Raimbek Alish`, and `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts`.
 - [ ] The tarball does not contain `src/`, `artifacts/`, test results, `.env`, credentials, or a reset token.
-- [ ] `private` stays `true` in documentation and preparation commits. The release commit that removes it must also update `test/package/smoke.test.ts`, which asserts `manifest.private === true`. That update checks the publishable manifest and keeps the `LICENSE`, executable, credential-exclusion, and clean-install assertions. Check `package-lock.json` still matches `package.json`, and require the whole CI workflow to be green on that commit before a tag or publish. Do not make that test change in a documentation pull request.
+- [ ] The publishable candidate removes `private` and updates `test/package/smoke.test.ts` so the packed manifest has no `private` property. That test still checks `LICENSE`, the executable, credential exclusion, and a clean install. `package-lock.json` still matches `package.json`. The changelog stays `Unreleased` until the publication-day commit, which dates `0.1.0` and then needs a fresh green CI run on that exact SHA before a tag or publish.
 
 ## Platforms
 

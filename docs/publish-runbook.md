@@ -4,7 +4,7 @@ This runbook prepares the first npm publication of ReproSeed. It does not author
 
 Two kinds of steps are separated below. Preparation is safe to repeat. Publication changes the public registry or creates a permanent git tag. Do those only after the owner explicitly approves the release commit.
 
-`private` stays `true` and `version` stays `0.1.0` until that release commit. CI must not publish. Do not add a publish workflow.
+The publishable candidate removes `private` and keeps version `0.1.0`. That candidate is not a publication. CI must not publish. Do not add a publish workflow.
 
 ## Preparation record
 
@@ -63,7 +63,7 @@ If npm Trust & Safety classifies the package differently, stop and reassess befo
 1. Confirm `npm whoami` succeeds and `tfa.mode` is `auth-and-writes`. If it does not, complete the manual `npm login` step above.
 2. Run `npm view reproseed` again. A 404 means the name is not currently visible. It still does not reserve the name. If the name belongs to someone else, stop and choose another name before any publish.
 3. On the commit you intend to release, confirm version `0.1.0`, MIT, the copyright line, green CI for all three jobs, and a packed tarball that contains `LICENSE`, `dist/cli.js`, the three exporter assets, `README.md`, and the two scenario files, and contains no `.env`, credentials, reports, or `src/`.
-4. Leave `private` set. Leave the changelog heading `Unreleased`. Do not tag.
+4. Leave the changelog heading `Unreleased`. Do not tag. Do not publish from the candidate branch.
 
 The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md). The checks to tick are [release-checklist.md](release-checklist.md).
 
@@ -71,12 +71,11 @@ The drafted notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md). The ch
 
 Do not perform this list as part of documentation or CI.
 
-1. Create the release commit on `main`. In that commit, remove `"private": true` on purpose. Also change the changelog heading from `Unreleased` to `0.1.0`, set the release date to the actual publication day, and point the README registry section at the command that will work after publish. Do not change the version away from `0.1.0` for this first publication. Do not make this commit as part of a documentation-only change.
-2. In that same commit, update `test/package/smoke.test.ts`. It currently asserts `manifest.private === true`. Removing the field without updating that assertion makes Package smoke verification fail. The new assertion must accept the intended publishable manifest: `private` absent, version `0.1.0`, and `license` still `MIT`. Keep every other package check: `LICENSE` and its copyright line, the executable CLI, the exporter assets, the scenario files, rejection of credentials and generated artifacts, and `--help` / `--version` from a clean install outside the checkout.
-3. Check `package-lock.json` in that same commit. `npm ci` must still install from the lockfile. The lockfile's root name, version, and dependency tree must still match `package.json`. Include a lockfile update only when removing `private` actually changes it.
-4. Run `npm pack --dry-run` and inspect the tarball from that commit. Confirm `private` is absent, `license` is `MIT`, and the file list is still the intended one.
-5. Run the whole CI workflow on that release commit. Quality and build, Chromium integration, and Package smoke verification must be green on that exact SHA before any tag or `npm publish`.
-6. Create the annotated tag only after those checks pass:
+1. The publishable candidate removes `"private": true`, updates `test/package/smoke.test.ts` so the packed manifest has no `private` property, and checks `package-lock.json`. It keeps version `0.1.0`, the MIT license, and the changelog heading `Unreleased`. Merging that candidate still does not publish.
+2. On the publication day, make a separate commit that moves the changelog heading from `Unreleased` to `0.1.0` and sets the release date to that day. Point the README registry section at the command that will work after publish. Do not change the version away from `0.1.0`.
+3. Run `npm pack --dry-run` on that publication-day commit. Confirm `private` is absent, `license` is `MIT`, and the file list is still the intended one.
+4. Run the whole CI workflow on that publication-day commit. Quality and build, Chromium integration, and Package smoke verification must be green on that exact SHA before any tag or `npm publish`. A green run of the earlier candidate is not that check.
+5. Create the annotated tag only after those checks pass:
 
    ```bash
    git tag -a v0.1.0 <release-sha> -m "ReproSeed 0.1.0"
@@ -84,17 +83,16 @@ Do not perform this list as part of documentation or CI.
    ```
 
    Do not move the tag and do not force-push it.
-7. From a checkout of that SHA, with the authenticated account, run `npm publish`. Complete the two-factor prompt. Do not run it from GitHub Actions. Do not use `npm stage publish` unless the owner has switched to npm CLI 11.15.0 or later and has accepted the public `0.0.0-stage` placeholder.
-8. Wait for the registry scan, then run `npm view reproseed version` and confirm `0.1.0`. In a clean directory, `npm install reproseed` and run `reproseed --help` and `reproseed --version`.
-9. Optionally create a GitHub Release from the tag `v0.1.0`. Use the drafted notes. Do not attach secrets or `artifacts/`.
+6. From a checkout of that SHA, with the authenticated account, run `npm publish`. Complete the two-factor prompt. Do not run it from GitHub Actions. Do not use `npm stage publish` unless the owner has switched to npm CLI 11.15.0 or later and has accepted the public `0.0.0-stage` placeholder.
+7. Wait for the registry scan, then run `npm view reproseed version` and confirm `0.1.0`. In a clean directory, `npm install reproseed` and run `reproseed --help` and `reproseed --version`.
+8. Optionally create a GitHub Release from the tag `v0.1.0`. Use the drafted notes. Do not attach secrets or `artifacts/`.
 
 ## Commands that stay unauthorized
 
-Until the owner explicitly approves the release commit:
+The candidate may remove `private`. Until the owner explicitly approves publication:
 
 - `npm publish`
 - `npm stage publish`, `npm stage approve`, or any other command that creates a registry package or a `0.0.0-stage` placeholder
-- Removing `private`
 - Changing `0.1.0`
 - `git tag`, including `v0.1.0`
 - Creating a GitHub Release

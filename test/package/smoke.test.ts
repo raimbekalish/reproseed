@@ -51,12 +51,14 @@ describe("npm package smoke", () => {
       const cli = await tarFile(tarball, "package/dist/cli.js");
       assert.equal(cli.startsWith("#!/usr/bin/env node\n"), true);
       const manifest = JSON.parse(await tarFile(tarball, "package/package.json")) as {
+        name?: string;
         private?: boolean;
         version?: string;
         license?: string;
         bin?: { reproseed?: string };
       };
-      assert.equal(manifest.private, true);
+      assert.equal(manifest.name, "reproseed");
+      assert.equal(Object.hasOwn(manifest, "private"), false);
       assert.equal(manifest.version, VERSION);
       assert.equal(manifest.license, "MIT");
       assert.equal(manifest.bin?.reproseed, "./dist/cli.js");

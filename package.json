@@ -1,7 +1,6 @@
 {
   "name": "reproseed",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "description": "Reproduce difficult bugs, minimize failing scenarios, and generate reliable regression tests.",
   "type": "module",
