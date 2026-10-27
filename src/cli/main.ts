@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 
 import { parseArgs } from "./args.ts";
+import { runDoctorCommand, type DoctorCommand } from "./doctor.ts";
 import { CliError, EXIT } from "./errors.ts";
+import { runInitCommand } from "./init.ts";
 import { redactSecrets } from "./redact.ts";
 import { runMinimizeCommand, type MinimizeCommand } from "./run.ts";
 
@@ -12,6 +14,8 @@ export type CliIo = {
   stderr: (text: string) => void;
   minimize?: MinimizeCommand["minimize"];
   preflight?: MinimizeCommand["preflight"];
+  doctorFetch?: DoctorCommand["fetchImpl"];
+  doctorChromium?: DoctorCommand["inspectChromium"];
 };
 
 export async function main(argv: readonly string[], io: CliIo): Promise<number> {
@@ -28,6 +32,25 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
     if (parsed.kind === "version") {
       stdout(`${readPackageVersion()}\n`);
       return EXIT.verified;
+    }
+    if (parsed.kind === "init") {
+      return await runInitCommand({
+        scenarioPath: parsed.scenarioPath,
+        oracle: parsed.oracle,
+        force: parsed.force,
+        cwd: io.cwd,
+        stdout,
+      });
+    }
+    if (parsed.kind === "doctor") {
+      return await runDoctorCommand({
+        scenarioPath: parsed.scenarioPath,
+        cwd: io.cwd,
+        env: io.env,
+        stdout,
+        ...(io.doctorFetch !== undefined ? { fetchImpl: io.doctorFetch } : {}),
+        ...(io.doctorChromium !== undefined ? { inspectChromium: io.doctorChromium } : {}),
+      });
     }
     return await runMinimizeCommand({
       scenarioPath: parsed.scenarioPath,

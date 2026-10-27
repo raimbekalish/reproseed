@@ -2,7 +2,7 @@
 
 ReproSeed is a local command-line tool. You give it a failing scenario for an authorized loopback test application. It deletes steps that are not required for that failure, then writes a Playwright regression test for the steps that remain.
 
-The current version is `0.1.0`, released October 25, 2026. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
+The published release is `0.1.0`, released October 25, 2026. This repository also contains unreleased `doctor` and `init` commands for the next release. `reproseed --version` still prints `0.1.0` until that release is published. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
 
 ## Install
 
@@ -36,11 +36,15 @@ Design notes that are not a user guide live in [docs/future-phase-corrections.md
 ## What it does not support
 
 - Production websites, signed-in applications, or any target that is not `http` on `127.0.0.1`, `localhost`, or `::1`.
-- Arbitrary applications. The target must expose `GET /__reproseed/identity` and an authorized `POST /__reproseed/reset`.
+- Arbitrary applications. The target must expose `GET /__reproseed/identity` and an authorized `POST /__reproseed/reset`. `init` and `doctor` do not add those endpoints.
 - A proof of the globally shortest reproduction. `verified-one-minimal` means 1-minimal under single deletion, confirmed by five fresh replays.
 - AI assistance, a hosted service, a dashboard, or a database.
 - Windows, or any operating system other than the ones exercised so far: development on macOS, and CI on GitHub-hosted Ubuntu with Node.js 22.
 - System Chrome or `chrome-headless-shell`. Launches use Playwright's downloaded Chromium revision with `channel: "chromium"`.
+
+## Integrate an application
+
+[docs/integrate-your-app.md](docs/integrate-your-app.md) is the path from this checkout to a scenario on your own loopback app. `reproseed init` writes a starter scenario. `reproseed doctor` checks it without sending `POST /__reproseed/reset`. `examples/opt-in-ticket` is one application that opts in. It is not one of the two demos below, and it is not in the npm package. The published 0.1.0 package does not include `doctor` or `init`.
 
 ## Quick start
 
@@ -239,7 +243,7 @@ Package check, without publishing:
 npm run test:package
 ```
 
-That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help` and `reproseed --version` must succeed from that install. `--version` prints `0.1.0`. The tarball contains `LICENSE`, `dist/` (including the embedded `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` assets), this README, and the two example scenario files. It does not contain credentials, `.env` files, `artifacts/`, test results, `node_modules`, or the TypeScript source tree.
+That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help`, `reproseed --version`, `reproseed init`, and `reproseed doctor` must run from that install. `--version` prints `0.1.0`. The tarball contains `LICENSE`, `dist/` (including the embedded `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` assets), this README, and the two original example scenario files. It does not contain credentials, `.env` files, `artifacts/`, test results, `node_modules`, the TypeScript source tree, or `examples/opt-in-ticket`.
 
 ## Continuous integration
 
@@ -251,7 +255,7 @@ That builds, runs `npm pack`, and installs the tarball outside this checkout. `r
 | --- | --- |
 | Quality and build | `npm ci`, typecheck, build, unit tests, and CLI tests that do not launch a browser |
 | Chromium integration | The locked Playwright Chromium build, then the browser suites one after another |
-| Package smoke verification | `npm pack` and `reproseed --help` / `reproseed --version` from a clean install of that tarball |
+| Package smoke verification | `npm pack`, then `reproseed --help`, `--version`, `init`, and `doctor` from a clean install of that tarball |
 
 A new push to the same pull request cancels the previous run. The badge shows the latest run on `main`.
 

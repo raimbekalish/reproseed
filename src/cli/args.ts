@@ -5,7 +5,9 @@ import {
   type TimingSearchConfig,
 } from "../core/duration.ts";
 import { CliError, EXIT } from "./errors.ts";
-import { MINIMIZE_HELP, ROOT_HELP } from "./help.ts";
+import { DOCTOR_HELP, INIT_HELP, MINIMIZE_HELP, ROOT_HELP } from "./help.ts";
+import { DEFAULT_INIT_PATH } from "./init.ts";
+import type { StarterOracle } from "./starter.ts";
 
 export const DEFAULT_REPORT_PATH = "artifacts/report.json";
 export const DEFAULT_SPEC_PATH = "artifacts/minimized.spec.ts";
@@ -13,6 +15,8 @@ export const DEFAULT_SPEC_PATH = "artifacts/minimized.spec.ts";
 export type ParsedArgs =
   | { kind: "help"; text: string }
   | { kind: "version" }
+  | { kind: "doctor"; scenarioPath: string }
+  | { kind: "init"; scenarioPath: string; oracle: StarterOracle; force: boolean }
   | {
       kind: "minimize";
       scenarioPath: string;
@@ -39,6 +43,18 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     return { kind: "help", text: ROOT_HELP };
   }
   const command = tokens[0];
+  if (command === "init") {
+    if (help) {
+      return { kind: "help", text: INIT_HELP };
+    }
+    return parseInit(tokens.slice(1));
+  }
+  if (command === "doctor") {
+    if (help) {
+      return { kind: "help", text: DOCTOR_HELP };
+    }
+    return parseDoctor(tokens.slice(1));
+  }
   if (command !== "minimize") {
     throw new CliError(`unknown command ${command ?? ""}\n\n${ROOT_HELP}`, EXIT.usage);
   }
@@ -46,6 +62,98 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     return { kind: "help", text: MINIMIZE_HELP };
   }
   return parseMinimize(tokens.slice(1));
+}
+
+function parseDoctor(args: readonly string[]): ParsedArgs {
+  let scenarioPath: string | undefined;
+  let optionsOpen = true;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) {
+      continue;
+    }
+    if (optionsOpen && arg === "--") {
+      optionsOpen = false;
+      continue;
+    }
+    if (optionsOpen && arg.startsWith("-")) {
+      throw new CliError(`unknown option ${arg}`, EXIT.usage);
+    }
+    if (scenarioPath !== undefined) {
+      throw new CliError("only one scenario file can be checked", EXIT.usage);
+    }
+    scenarioPath = arg;
+  }
+  if (scenarioPath === undefined) {
+    throw new CliError("scenario file is required", EXIT.usage);
+  }
+  return { kind: "doctor", scenarioPath };
+}
+
+function parseInit(args: readonly string[]): ParsedArgs {
+  let scenarioPath = DEFAULT_INIT_PATH;
+  let sawPath = false;
+  let oracle: StarterOracle = "record-count";
+  let sawOracle = false;
+  let force = false;
+  let optionsOpen = true;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) {
+      continue;
+    }
+    if (optionsOpen && arg === "--") {
+      optionsOpen = false;
+      continue;
+    }
+    if (optionsOpen && arg.startsWith("-")) {
+      if (arg === "--force") {
+        force = true;
+        continue;
+      }
+      if (arg === "--oracle" || arg.startsWith("--oracle=")) {
+        if (sawOracle) {
+          throw new CliError("--oracle was provided more than once", EXIT.usage);
+        }
+        const read = readOracle(args, index, arg);
+        oracle = read.value;
+        sawOracle = true;
+        index = read.index;
+        continue;
+      }
+      throw new CliError(`unknown option ${arg}`, EXIT.usage);
+    }
+    if (sawPath) {
+      throw new CliError("only one scenario file can be created", EXIT.usage);
+    }
+    scenarioPath = arg;
+    sawPath = true;
+  }
+  return { kind: "init", scenarioPath, oracle, force };
+}
+
+function readOracle(
+  args: readonly string[],
+  index: number,
+  arg: string,
+): { value: StarterOracle; index: number } {
+  const prefix = "--oracle=";
+  let raw: string;
+  let nextIndex = index;
+  if (arg.startsWith(prefix)) {
+    raw = arg.slice(prefix.length);
+  } else {
+    const next = args[index + 1];
+    if (next === undefined || next === "--" || next.startsWith("-")) {
+      throw new CliError("--oracle must be record-count or dom-text", EXIT.usage);
+    }
+    raw = next;
+    nextIndex = index + 1;
+  }
+  if (raw !== "record-count" && raw !== "dom-text") {
+    throw new CliError("--oracle must be record-count or dom-text", EXIT.usage);
+  }
+  return { value: raw, index: nextIndex };
 }
 
 function parseMinimize(args: readonly string[]): ParsedArgs {

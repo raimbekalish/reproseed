@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, it } from "node:test";
@@ -98,14 +98,67 @@ describe("npm package smoke", () => {
       assert.equal(help.code, 0, help.stderr);
       assert.match(help.stdout, /does not target production websites/);
       assert.match(help.stdout, /loopback/);
+      assert.match(help.stdout, /reproseed doctor/);
+      assert.match(help.stdout, /reproseed init/);
       const version = await run(process.execPath, [join(pkgRoot, "dist/cli.js"), "--version"], work, 30_000, cleanEnv());
       assert.equal(version.code, 0, version.stderr);
       assert.equal(version.stdout, `${VERSION}\n`);
+
+      const initHelp = await run(bin, ["init", "--help"], work, 30_000, cleanEnv());
+      assert.equal(initHelp.code, 0, initHelp.stderr);
+      assert.match(initHelp.stdout, /does not contain a reset credential/);
+      const doctorHelp = await run(bin, ["doctor", "--help"], work, 30_000, cleanEnv());
+      assert.equal(doctorHelp.code, 0, doctorHelp.stderr);
+      assert.match(doctorHelp.stdout, /does not send POST \/__reproseed\/reset/);
+      assert.match(doctorHelp.stdout, /does not launch a browser/);
+      const token = "package-smoke-token-value";
+      const created = await run(bin, ["init", "scenario.json", "--oracle", "dom-text"], work, 30_000, cleanEnv());
+      assert.equal(created.code, 0, `${created.stdout}\n${created.stderr}`);
+      const starter = await readFile(join(work, "scenario.json"), "utf8");
+      assert.equal(starter.includes("resetAuthorization"), false);
+      assert.equal(starter.includes(token), false);
+      assert.match(starter, /http:\/\/127\.0\.0\.1:3000/);
+      assert.equal(/https?:\/\/(?!127\.0\.0\.1|localhost)/.test(starter), false);
+      const probe = {
+        id: "probe",
+        target: { origin: "http://127.0.0.1:9", appId: "probe" },
+        reset: {
+          method: "POST",
+          path: "/__reproseed/reset",
+          verify: { kind: "json-array-empty", method: "GET", path: "/api/items" },
+        },
+        steps: [{ id: "open", kind: "goto", path: "/", dependsOn: [] }],
+        oracle: { id: "dom-text", selector: "#results", expect: "ready" },
+        budget: {
+          maxReplayExecutions: 10,
+          maxWallClockMs: 10000,
+          attemptTimeoutMs: 1000,
+          baselineRuns: 2,
+          reductionConfirmRuns: 2,
+          verifyRuns: 5,
+        },
+      };
+      await writeSmokeScenario(work, probe);
+      const doctorEnv = cleanEnv();
+      doctorEnv.REPROSEED_ORIGIN = "http://127.0.0.1:9";
+      doctorEnv.REPROSEED_APP_ID = "probe";
+      doctorEnv.REPROSEED_RESET_AUTHORIZATION = token;
+      const doctor = await run(bin, ["doctor", "probe.json"], work, 30_000, doctorEnv);
+      assert.equal(doctor.code, 1, `${doctor.stdout}\n${doctor.stderr}`);
+      assert.match(doctor.stdout, /Doctor does not send POST \/__reproseed\/reset/);
+      assert.match(doctor.stdout, /did not launch a browser/);
+      assert.match(doctor.stdout, /not-verified\s+reset-accepted/);
+      assert.equal(doctor.stdout.includes(token), false);
+      assert.equal(doctor.stderr.includes(token), false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 });
+
+async function writeSmokeScenario(work: string, body: unknown): Promise<void> {
+  await writeFile(join(work, "probe.json"), `${JSON.stringify(body, null, 2)}\n`);
+}
 
 function assertPackEntries(names: readonly string[]): void {
   for (const required of REQUIRED) {

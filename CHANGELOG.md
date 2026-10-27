@@ -2,6 +2,17 @@
 
 0.1.0 is the first release. This file does not invent earlier versions.
 
+## [Unreleased]
+
+Work toward 0.2.0. This section is not a release. The package version stays 0.1.0 until that release is published.
+
+### Added
+
+- `reproseed doctor` checks a scenario, the loopback target, Chromium, and the clean-state GET without sending `POST /__reproseed/reset` or launching a browser.
+- `reproseed init` writes a starter scenario for the record-count or DOM-text oracle. It does not embed a reset credential or a production URL.
+- `examples/opt-in-ticket`, a loopback application that opts in to identity, authorized reset, and a read-only clean-state list. It does not use the other demo servers.
+- [docs/integrate-your-app.md](docs/integrate-your-app.md), the path from a checkout to a local integration.
+
 ## [0.1.0] - 2026-10-25
 
 The notes for this version are also in [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md).

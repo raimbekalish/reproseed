@@ -37,15 +37,16 @@ Generate reset credentials in the shell when you need a demo. Do not commit them
 
 | Path | Role |
 | --- | --- |
-| `src/cli` | Arguments, help text, exit codes, and writing the sanitized report |
+| `src/cli` | Arguments, help text, exit codes, `init`, `doctor`, and writing the sanitized report |
 | `src/core` | Scenario types, minimizer, signatures, and budgets. This directory stays free of Playwright |
 | `src/runner` | Chromium replay, reset, delay matching, and oracles |
 | `src/export` | Playwright regression spec |
 | `examples/duplicate-submit` | Record-count demo and scenario |
 | `examples/stale-search` | DOM-text demo and scenario |
+| `examples/opt-in-ticket` | Independent opt-in application used by the integration guide |
 | `test` | Unit tests and browser integration |
 | `scripts` | Export-asset copy and the CI Chromium installer |
-| `docs` | Design notes, the release checklist, the 0.1.0 release notes, the publish runbook, and the record of the MIT license decision |
+| `docs` | Design notes, the integration guide, the release checklist, the 0.1.0 release notes, the publish runbook, and the record of the MIT license decision |
 | `.github` | CI workflow and issue/pull-request templates |
 
 ## Fast checks
@@ -77,7 +78,7 @@ npm run test:export
 npm run test:cli:e2e
 ```
 
-`npm run test:browsers` runs those five commands in that order. `npm run test:runner` also sets `--test-concurrency=1`. `npm run test:cli:e2e` needs the build from the first command.
+`npm run test:browsers` runs those five commands in that order. `npm run test:runner` also sets `--test-concurrency=1`. `npm run test:cli:e2e` needs the build from the first command. It runs the existing CLI end-to-end tests and then minimizes `examples/opt-in-ticket` through the built CLI. Those browser tests run one at a time.
 
 Each suite starts its own loopback server on an ephemeral port and generates its reset credential in the test process. No private production credential is required.
 
