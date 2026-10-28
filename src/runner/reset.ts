@@ -44,10 +44,77 @@ export async function readRecordList(input: {
     throw new Error(`record list failed (${response.status})`);
   }
   const body: unknown = await response.json();
-  if (!Array.isArray(body) || !body.every(isRecord)) {
+  if (!Array.isArray(body) || !body.every(isListedRecord)) {
     throw new Error("record list payload was not a list of records");
   }
   return body;
+}
+
+const RECORD_FIELDS = [
+  ["id", "string"],
+  ["email", "string"],
+  ["note", "string"],
+  ["createdAt", "number"],
+] as const;
+
+const RECORD_SHAPE_REPORT_LIMIT = 8;
+
+/**
+ * The minimizer and doctor share this shape. Extra fields are allowed.
+ * A missing field and a field of the wrong type are different problems.
+ * The text names the item and the field. It does not include field values.
+ */
+export function isListedRecord(value: unknown): value is ListedRecord {
+  return recordShapeProblem(value, 0) === undefined;
+}
+
+export function recordShapeProblems(items: readonly unknown[]): string[] {
+  const problems: string[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const problem = recordShapeProblem(items[index], index);
+    if (problem !== undefined) {
+      problems.push(problem);
+    }
+  }
+  return problems;
+}
+
+export function formatRecordShapeProblems(problems: readonly string[]): string {
+  if (problems.length <= RECORD_SHAPE_REPORT_LIMIT) {
+    return problems.join(" ");
+  }
+  const hidden = problems.length - RECORD_SHAPE_REPORT_LIMIT;
+  const noun = hidden === 1 ? "item" : "items";
+  return `${problems.slice(0, RECORD_SHAPE_REPORT_LIMIT).join(" ")} ${hidden} more ${noun} also failed the record shape.`;
+}
+
+function recordShapeProblem(value: unknown, index: number): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return `item ${index} is not a record object`;
+  }
+  const record = value as Record<string, unknown>;
+  const missing: string[] = [];
+  const wrong: string[] = [];
+  for (const [field, type] of RECORD_FIELDS) {
+    if (!Object.hasOwn(record, field)) {
+      missing.push(field);
+      continue;
+    }
+    if (typeof record[field] !== type) {
+      wrong.push(field);
+    }
+  }
+  if (missing.length === 0 && wrong.length === 0) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (missing.length > 0) {
+    parts.push(`missing ${missing.join(", ")}`);
+  }
+  if (wrong.length > 0) {
+    parts.push(`wrong type for ${wrong.join(", ")}`);
+  }
+  return `item ${index}: ${parts.join("; ")}`;
 }
 
 /**
@@ -180,17 +247,4 @@ function requestInit(input: { method?: "POST"; signal?: AbortSignal }): RequestI
 
 function isIdentity(value: unknown): value is { appId: string } {
   return typeof value === "object" && value !== null && "appId" in value && typeof value.appId === "string";
-}
-
-function isRecord(value: unknown): value is ListedRecord {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const record = value as { id?: unknown; email?: unknown; note?: unknown; createdAt?: unknown };
-  return (
-    typeof record.id === "string" &&
-    typeof record.email === "string" &&
-    typeof record.note === "string" &&
-    typeof record.createdAt === "number"
-  );
 }

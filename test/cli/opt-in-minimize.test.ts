@@ -19,7 +19,7 @@ const PLAYWRIGHT = join(REPO, "node_modules/@playwright/test/cli.js");
 const APP_ID = "opt-in-ticket";
 
 describe("opt-in ticket through the built CLI", { concurrency: false }, () => {
-  it("diagnoses, minimizes, and exports a failing regression test", { timeout: 600_000 }, async () => {
+  it("diagnoses, minimizes, and runs the same spec red then green", { timeout: 600_000 }, async () => {
     const token = randomBytes(16).toString("hex");
     const root = await mkdtemp(join(tmpdir(), "reproseed-opt-in-"));
     const work = join(root, "work");
@@ -42,6 +42,7 @@ describe("opt-in ticket through the built CLI", { concurrency: false }, () => {
       assert.match(doctor.stdout, /did not launch a browser/);
       assert.match(doctor.stdout, /not-verified\s+reset-accepted/);
       assert.match(doctor.stdout, /JSON array with 1 item/);
+      assert.match(doctor.stdout, /record-count shape/);
       assert.equal(doctor.stdout.includes(token), false);
       assert.equal(doctor.stderr.includes(token), false);
       const afterDoctor = (await (await fetch(`${server.origin}/api/tickets`)).json()) as unknown[];
@@ -108,6 +109,22 @@ export default defineConfig({
         records.map((record) => record.email),
         ["person@example.com", "person@example.com"],
       );
+
+      const fixed = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token, page: "fixed" });
+      try {
+        const green = await runPlaywright(work, targetEnv(fixed.origin, token));
+        assert.equal(green.code, 0, green.output);
+        assert.equal(green.output.includes(token), false);
+        assert.equal(await readFile(join(work, "artifacts/ticket.spec.ts"), "utf8"), spec);
+        const fixedRecords = (await (await fetch(`${fixed.origin}/api/tickets`)).json()) as Array<{ email?: string }>;
+        assert.deepEqual(
+          fixedRecords.map((record) => record.email),
+          ["person@example.com"],
+        );
+        console.log(JSON.stringify({ red: { code: red.code, received: 2 }, green: { code: green.code, received: fixedRecords.length } }));
+      } finally {
+        await fixed.close();
+      }
     } finally {
       await server.close();
       leaked = await waitForBrowsers(before);

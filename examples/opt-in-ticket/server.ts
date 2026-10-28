@@ -16,11 +16,18 @@ export type Ticket = {
   createdAt: number;
 };
 
+export type OptInPage = "buggy" | "fixed";
+
 export type OptInServerOptions = {
   host?: string;
   port?: number;
   appId?: string;
   resetAuthorization?: string;
+  /**
+   * `buggy` is the default page and the only page the CLI serves.
+   * `fixed` is the test-only client used to show the same generated spec passing.
+   */
+  page?: OptInPage;
 };
 
 export type OptInServer = {
@@ -33,7 +40,8 @@ export type OptInServer = {
 };
 
 const BODY_LIMIT = 64 * 1024;
-const PAGE_HTML = readFileSync(fileURLToPath(new URL("./public/index.html", import.meta.url)), "utf8");
+const BUGGY_HTML = readFileSync(fileURLToPath(new URL("./public/index.html", import.meta.url)), "utf8");
+const FIXED_HTML = readFileSync(fileURLToPath(new URL("./public/fixed.html", import.meta.url)), "utf8");
 
 export async function startOptInServer(options: OptInServerOptions = {}): Promise<OptInServer> {
   const host = bindAddress(options.host ?? "127.0.0.1");
@@ -43,11 +51,13 @@ export async function startOptInServer(options: OptInServerOptions = {}): Promis
   }
   const appId = blankToUndefined(options.appId);
   const resetAuthorization = blankToUndefined(options.resetAuthorization);
+  const page = requirePage(options.page);
   const state: AppState = {
     tickets: [],
     appId,
     resetAuthorization,
     posts: 0,
+    pageHtml: page === "fixed" ? FIXED_HTML : BUGGY_HTML,
   };
   const server = createServer((request, response) => {
     void handleRequest(request, response, state).catch(() => {
@@ -105,6 +115,16 @@ function formatHost(address: string): string {
   return address.includes(":") ? `[${address}]` : address;
 }
 
+function requirePage(page: OptInPage | undefined): OptInPage {
+  if (page === undefined || page === "buggy") {
+    return "buggy";
+  }
+  if (page === "fixed") {
+    return "fixed";
+  }
+  throw new Error("page must be buggy or fixed");
+}
+
 function blankToUndefined(value: string | undefined): string | undefined {
   if (value === undefined || value.trim() === "") {
     return undefined;
@@ -117,13 +137,14 @@ type AppState = {
   appId: string | undefined;
   resetAuthorization: string | undefined;
   posts: number;
+  pageHtml: string;
 };
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse, state: AppState): Promise<void> {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   const method = request.method ?? "GET";
   if (method === "GET" && url.pathname === "/") {
-    sendHtml(response, PAGE_HTML);
+    sendHtml(response, state.pageHtml);
     return;
   }
   if (method === "GET" && url.pathname === "/api/tickets") {

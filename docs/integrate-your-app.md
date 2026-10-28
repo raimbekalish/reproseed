@@ -103,7 +103,7 @@ export REPROSEED_ORIGIN=http://127.0.0.1:4030
 
 ## Check without resetting
 
-`doctor` reads the scenario and, when the origin is authorized loopback, sends GET requests only. It does not send `POST /__reproseed/reset`. It does not launch a browser. It does not follow redirects. It does not print the credential.
+`doctor` reads the scenario and, when the origin is authorized loopback, sends GET requests only. It does not send `POST /__reproseed/reset`. It does not launch a browser. It does not follow redirects. It does not print the credential or record values.
 
 ```bash
 node dist/cli.js doctor examples/opt-in-ticket/scenario.json
@@ -114,7 +114,9 @@ A line starts with `pass`, `fail`, `skipped`, or `not-verified`. These two are n
 - `reset-accepted` — the credential is set, and the application has not been asked to accept it
 - `clean-state-after-reset` — the current JSON array was not produced by a reset
 
-`clean-state-endpoint` only says the GET returned a JSON array. A non-empty array can still pass that check. `minimize` resets first and then requires the array to be empty.
+`target-available` requests each distinct `goto` path. A response from 200 through 299 passes. A connection failure, a redirect, a missing route, and a server error are separate failures. A 500 is a reachable server, not a ready page. Doctor does not require `GET /` when the scenario navigates somewhere else. When the scenario has no `goto` step, the request is `GET /`.
+
+`clean-state-endpoint` says the GET returned a JSON array. An empty array passes. A non-empty array can still pass, and `minimize` resets first and then requires the array to be empty. For a `record-count` scenario, each non-empty item must have string `id`, `email`, and `note`, and numeric `createdAt`. That is the same shape `minimize` reads. A missing field and a wrong type are reported by item index and field name. The values are not printed. A `dom-text` scenario only needs the JSON array. Its items do not have to be records.
 
 Exit 0 means every required check passed. Exit 1 means usage was invalid or a required check failed or was skipped. Exit 4 is an unexpected failure. `doctor` does not use the minimize exit codes 2 and 3.
 
@@ -155,7 +157,9 @@ REPROSEED_RESET_AUTHORIZATION="<paste the value printed by the application termi
 npx playwright test --config playwright.ticket.config.ts
 ```
 
-Expect Playwright exit 1, `Expected: 1`, and `Received: 2`. A fix in the application should make the same spec pass. This example does not include that fix.
+Expect Playwright exit 1, `Expected: 1`, and `Received: 2` while the default page is running. That page keeps the bug: a second click during the delayed save files another ticket.
+
+`test/cli/opt-in-minimize.test.ts` then starts a second server on another ephemeral port and serves `examples/opt-in-ticket/public/fixed.html`. That page ignores a click while a save is already in flight. The test runs the same generated spec against it, without editing the spec, and expects Playwright exit 0 and one ticket. `npm run demo:ticket` does not serve the fixed page. The page is not in the npm package. The default application remains the buggy one.
 
 ## Credentials
 
@@ -174,8 +178,10 @@ Expect Playwright exit 1, `Expected: 1`, and `Received: 2`. A fix in the applica
 | Identity returned a different app id | Set `REPROSEED_APP_ID` to the value the application returns, and put that same value in `target.appId` when the file has one. |
 | `REPROSEED_ORIGIN does not match target.origin` | The file and the environment disagree. Doctor does not contact either host until they match, and the origin still has to be loopback. |
 | `non-loopback` | Use `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. HTTPS and other hosts are refused before any request. |
-| Could not connect | Start the application and set `REPROSEED_ORIGIN` to the URL it printed, including the port. |
-| Clean-state GET is not a JSON array | `reset.verify.path` has to be a same-origin GET that returns an array. For `record-count`, the objects also need `id`, `email`, `note`, and `createdAt`. |
+| Could not connect | Start the application and set `REPROSEED_ORIGIN` to the URL it printed, including the port. This is a network failure. A 404 or a 500 means the server did respond. |
+| `navigation path is missing` or `server failure` | The scenario `goto` path did not return a successful status. Doctor does not call that page ready. Fix the route the scenario opens. A server error is not proof that the process is up and healthy. |
+| `record-count check cannot read` | Each array item needs string `id`, `email`, and `note`, and numeric `createdAt`. The message names the item index and the field. It does not print the values. A `dom-text` scenario does not use this shape. |
+| Clean-state GET is not a JSON array | `reset.verify.path` has to be a same-origin GET that returns an array. |
 | `reset-accepted` is `not-verified` | That is expected. Only `minimize` sends the reset. If minimize then says reset failed, the header or the credential does not match. |
 | `refusing to overwrite` | Pass `--force` to replace a report, spec, or `init` file. `--force` still does not replace a spec when minimization did not verify. |
 | `no-reproducible-failure` | The full scenario did not reproduce one target failure. For this example, the second click has to land during the delayed response: keep the 2000ms delay and the 800ms gap, and do not raise the page's 400ms guard above that gap. |

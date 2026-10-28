@@ -73,6 +73,45 @@ describe("opt-in ticket example", () => {
     }
   });
 
+  it("keeps the buggy page as the default and isolates the fixed page", async () => {
+    const token = randomBytes(16).toString("hex");
+    const buggy = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
+    const fixed = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token, page: "fixed" });
+    try {
+      const buggyPage = await (await fetch(`${buggy.origin}/`)).text();
+      const fixedPage = await (await fetch(`${fixed.origin}/`)).text();
+      assert.match(buggyPage, /GUARD_MS = 400/);
+      assert.equal(buggyPage.includes("test-only fixed client"), false);
+      assert.match(fixedPage, /test-only fixed client/);
+      assert.equal(fixedPage.includes("GUARD_MS"), false);
+      assert.equal(buggyPage.includes(token), false);
+      assert.equal(fixedPage.includes(token), false);
+      const refused = await fetch(`${fixed.origin}/__reproseed/reset`, {
+        method: "POST",
+        headers: {
+          "x-reproseed-app-id": APP_ID,
+          "x-reproseed-reset-authorization": `${token}no`,
+        },
+      });
+      assert.equal(refused.status, 403);
+      assert.equal((await tickets(fixed.origin)).length, 0);
+      await postTicket(fixed.origin, "person@example.com");
+      assert.equal((await tickets(fixed.origin)).length, 1);
+      const accepted = await fetch(`${fixed.origin}/__reproseed/reset`, {
+        method: "POST",
+        headers: {
+          "x-reproseed-app-id": APP_ID,
+          "x-reproseed-reset-authorization": token,
+        },
+      });
+      assert.equal(accepted.status, 204);
+      assert.equal((await tickets(fixed.origin)).length, 0);
+    } finally {
+      await Promise.all([buggy.close(), fixed.close()]);
+    }
+    await assert.rejects(startOptInServer({ page: "other" as "fixed" }), /page must be buggy or fixed/);
+  });
+
   it("is diagnosed without a reset and the process log omits the credential", async () => {
     const token = randomBytes(16).toString("hex");
     const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
@@ -100,6 +139,7 @@ describe("opt-in ticket example", () => {
       assert.equal(report.includes(token), false);
       assert.match(report, /not-verified\s+reset-accepted/);
       assert.match(report, /JSON array with 1 item/);
+      assert.match(report, /record-count shape/);
       assert.equal(calls.includes("POST"), false);
       assert.equal((await tickets(server.origin)).length, 1);
     } finally {

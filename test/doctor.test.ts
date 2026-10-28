@@ -126,7 +126,9 @@ describe("doctor checks", () => {
       });
       assert.equal(status(mismatch, "target-identity"), "fail");
       assert.match(detail(mismatch, "target-identity"), /other-app/);
+      assert.equal(status(mismatch, "clean-state-endpoint"), "pass");
       assert.match(detail(mismatch, "clean-state-endpoint"), /1 item/);
+      assert.doesNotMatch(detail(mismatch, "clean-state-endpoint"), /record-count shape|cannot read/);
       assert.equal(status(mismatch, "chromium"), "fail");
       assert.match(detail(mismatch, "chromium"), /did not launch a browser/);
       assert.equal(mismatchCalls.some((call) => call.method === "POST"), false);
@@ -166,6 +168,133 @@ describe("doctor checks", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("accepts an empty record list and a valid non-empty list without printing values", async () => {
+    const empty = await diagnose(starterScenario("record-count"), readyRoutes("/api/items", []));
+    assert.equal(status(empty.checks, "clean-state-endpoint"), "pass");
+    assert.match(detail(empty.checks, "clean-state-endpoint"), /JSON array with 0 items/);
+    assert.doesNotMatch(detail(empty.checks, "clean-state-endpoint"), /record-count shape|cannot read/);
+    assert.equal(empty.report.includes(TOKEN), false);
+
+    const listed = await diagnose(
+      starterScenario("record-count"),
+      readyRoutes("/api/items", [{ id: TOKEN, email: TOKEN, note: TOKEN, createdAt: 1, secret: TOKEN }]),
+    );
+    assert.equal(status(listed.checks, "clean-state-endpoint"), "pass");
+    assert.match(detail(listed.checks, "clean-state-endpoint"), /JSON array with 1 item/);
+    assert.match(detail(listed.checks, "clean-state-endpoint"), /record-count shape/);
+    assert.equal(listed.report.includes(TOKEN), false);
+    assert.deepEqual(listed.calls, ["/", "/__reproseed/identity", "/api/items"]);
+    assert.deepEqual(listed.methods, ["GET", "GET", "GET"]);
+    assert.equal(listed.calls.some((path) => path.includes("/__reproseed/reset")), false);
+  });
+
+  it("rejects missing fields, wrong types, and a mix of valid and invalid records", async () => {
+    const missing = await diagnose(starterScenario("record-count"), readyRoutes("/api/items", [{ id: TOKEN }]));
+    assert.equal(status(missing.checks, "clean-state-endpoint"), "fail");
+    assert.match(detail(missing.checks, "clean-state-endpoint"), /item 0: missing email, note, createdAt/);
+    assert.match(detail(missing.checks, "clean-state-endpoint"), /Record values are not printed/);
+    assert.equal(missing.report.includes(TOKEN), false);
+    assert.equal(doctorExitCode(missing.checks), EXIT.usage);
+
+    const wrong = await diagnose(
+      starterScenario("record-count"),
+      readyRoutes("/api/items", [{ id: 1, email: false, note: null, createdAt: TOKEN }]),
+    );
+    assert.equal(status(wrong.checks, "clean-state-endpoint"), "fail");
+    assert.match(detail(wrong.checks, "clean-state-endpoint"), /item 0: wrong type for id, email, note, createdAt/);
+    assert.equal(wrong.report.includes(TOKEN), false);
+
+    const mixed = await diagnose(
+      starterScenario("record-count"),
+      readyRoutes("/api/items", [
+        { id: "rec-1", email: TOKEN, note: TOKEN, createdAt: 1 },
+        "not-a-record",
+        { note: 1 },
+      ]),
+    );
+    assert.equal(status(mixed.checks, "clean-state-endpoint"), "fail");
+    assert.match(detail(mixed.checks, "clean-state-endpoint"), /item 1 is not a record object/);
+    assert.match(detail(mixed.checks, "clean-state-endpoint"), /item 2: missing id, email, createdAt; wrong type for note/);
+    assert.doesNotMatch(detail(mixed.checks, "clean-state-endpoint"), /item 0/);
+    assert.equal(mixed.report.includes(TOKEN), false);
+    assert.equal(mixed.report.includes("not-a-record"), false);
+  });
+
+  it("does not apply the record shape to a dom-text array", async () => {
+    const checked = await diagnose(starterScenario("dom-text"), readyRoutes("/api/events", [{ id: TOKEN, label: "event" }]));
+    assert.equal(status(checked.checks, "clean-state-endpoint"), "pass");
+    assert.match(detail(checked.checks, "clean-state-endpoint"), /JSON array with 1 item/);
+    assert.doesNotMatch(detail(checked.checks, "clean-state-endpoint"), /record-count shape|cannot read|missing /);
+    assert.equal(checked.report.includes(TOKEN), false);
+  });
+
+  it("distinguishes a successful page, a missing route, a server failure, and a redirect", async () => {
+    const success = await diagnose(starterScenario("record-count"), readyRoutes("/api/items", []));
+    assert.equal(status(success.checks, "target-available"), "pass");
+    assert.match(detail(success.checks, "target-available"), /GET \/ on http:\/\/127\.0\.0\.1:3000 returned status 200/);
+    assert.doesNotMatch(detail(success.checks, "target-available"), /server failure|missing|redirect/);
+
+    const missing = await diagnose(starterScenario("record-count"), {
+      ...readyRoutes("/api/items", []),
+      "/": () => new Response("missing", { status: 404 }),
+    });
+    assert.equal(status(missing.checks, "target-available"), "fail");
+    assert.match(detail(missing.checks, "target-available"), /returned status 404/);
+    assert.match(detail(missing.checks, "target-available"), /navigation path is missing/);
+    assert.equal(status(missing.checks, "target-identity"), "pass");
+
+    const failure = await diagnose(starterScenario("record-count"), {
+      ...readyRoutes("/api/items", []),
+      "/": () => json(500, { error: TOKEN }),
+    });
+    assert.equal(status(failure.checks, "target-available"), "fail");
+    assert.match(detail(failure.checks, "target-available"), /returned status 500/);
+    assert.match(detail(failure.checks, "target-available"), /server failure/);
+    assert.equal(status(failure.checks, "target-identity"), "pass");
+    assert.equal(failure.report.includes(TOKEN), false);
+    assert.deepEqual(failure.calls, ["/", "/__reproseed/identity", "/api/items"]);
+
+    const redirect = await diagnose(starterScenario("record-count"), {
+      ...readyRoutes("/api/items", []),
+      "/": () => new Response(null, { status: 302, headers: { location: "http://127.0.0.1:3000/next" } }),
+    });
+    assert.equal(status(redirect.checks, "target-available"), "fail");
+    assert.match(detail(redirect.checks, "target-available"), /GET \/ on http:\/\/127\.0\.0\.1:3000 was a redirect/);
+    assert.match(detail(redirect.checks, "target-available"), /did not follow it/);
+    assert.equal(status(redirect.checks, "target-identity"), "pass");
+    assert.equal(redirect.report.includes(TOKEN), false);
+  });
+
+  it("checks the scenario goto path and does not require GET /", async () => {
+    const body = starterScenario("record-count") as { steps: Array<{ id: string; path?: string }> };
+    const open = body.steps.find((step) => step.id === "open");
+    assert.ok(open);
+    open.path = "/desk";
+    const checked = await diagnose(body, {
+      "/desk": () => new Response("<html></html>", { status: 200, headers: { "content-type": "text/html" } }),
+      "/__reproseed/identity": () => json(200, { appId: "replace-with-your-app-id" }),
+      "/api/items": () => json(200, []),
+    });
+    assert.equal(status(checked.checks, "target-available"), "pass");
+    assert.match(detail(checked.checks, "target-available"), /GET \/desk on http:\/\/127\.0\.0\.1:3000 returned status 200/);
+    assert.deepEqual(checked.calls, ["/desk", "/__reproseed/identity", "/api/items"]);
+    assert.equal(doctorExitCode(checked.checks), EXIT.verified);
+  });
+
+  it("uses GET / only when the scenario has no goto step", async () => {
+    const body = starterScenario("record-count") as { steps: unknown[] };
+    body.steps = [{ id: "pause", kind: "wait", ms: 1, dependsOn: [] }];
+    const failure = await diagnose(body, {
+      ...readyRoutes("/api/items", []),
+      "/": () => new Response("down", { status: 500 }),
+    });
+    assert.equal(status(failure.checks, "target-available"), "fail");
+    assert.match(detail(failure.checks, "target-available"), /returned status 500/);
+    assert.match(detail(failure.checks, "target-available"), /server failure/);
+    assert.match(detail(failure.checks, "target-available"), /no goto step/);
+    assert.equal(failure.report.includes(TOKEN), false);
   });
 
   it("checks the Chromium install path without launching a browser", () => {
@@ -222,6 +351,42 @@ function targetEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 
 function readyChromium(): { ready: true; detail: string } {
   return { ready: true, detail: "Playwright's downloaded Chromium is installed. Doctor did not launch a browser." };
+}
+
+async function diagnose(
+  body: unknown,
+  routes: Record<string, () => Response>,
+): Promise<{ checks: DoctorCheck[]; calls: string[]; methods: string[]; report: string }> {
+  const directory = await mkdtemp(join(tmpdir(), "reproseed-doctor-case-"));
+  const calls: Array<{ method: string; url: string; redirect: string | undefined }> = [];
+  try {
+    const scenario = join(directory, "scenario.json");
+    await writeFile(scenario, JSON.stringify(body));
+    const checks = await collectDoctorChecks({
+      scenarioPath: scenario,
+      cwd: directory,
+      env: targetEnv(),
+      stdout: () => undefined,
+      fetchImpl: mockFetch(calls, routes),
+      inspectChromium: readyChromium,
+    });
+    return {
+      checks,
+      calls: calls.map((call) => new URL(call.url).pathname),
+      methods: calls.map((call) => call.method),
+      report: formatDoctorReport(checks),
+    };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function readyRoutes(cleanPath: string, items: unknown): Record<string, () => Response> {
+  return {
+    "/": () => new Response("<html></html>", { status: 200, headers: { "content-type": "text/html" } }),
+    "/__reproseed/identity": () => json(200, { appId: "replace-with-your-app-id" }),
+    [cleanPath]: () => json(200, items),
+  };
 }
 
 function json(statusCode: number, body: unknown): Response {

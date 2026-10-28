@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Opt-in ticket</title>
+</head>
+<body>
+  <h1>File a ticket</h1>
+  <p>This page is a test-only fixed client. It is not the default application and it is not part of the npm package.</p>
+  <form id="ticket-form">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="off">
+    <label for="note">Note</label>
+    <input id="note" name="note" type="text" autocomplete="off">
+    <button type="button" id="file">File ticket</button>
+  </form>
+  <p id="status"></p>
+  <script>
+    // The button stays enabled so the generated spec can click it twice.
+    // The click is ignored while a save is already in flight, which is what the buggy page fails to do.
+    let locked = false;
+    const emailInput = document.querySelector("#email");
+    const noteInput = document.querySelector("#note");
+    const fileButton = document.querySelector("#file");
+    const status = document.querySelector("#status");
+    if (
+      !(emailInput instanceof HTMLInputElement) ||
+      !(noteInput instanceof HTMLInputElement) ||
+      !(fileButton instanceof HTMLButtonElement) ||
+      !(status instanceof HTMLElement)
+    ) {
+      throw new Error("opt-in ticket form is incomplete");
+    }
+    fileButton.addEventListener("click", () => {
+      if (locked) {
+        return;
+      }
+      locked = true;
+      const email = emailInput.value;
+      const note = noteInput.value;
+      fetch("/api/tickets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, note }),
+      }).then((response) => {
+        if (!response.ok) {
+          locked = false;
+          status.textContent = "Not filed";
+          return;
+        }
+        status.textContent = "Filed";
+      }).catch(() => {
+        locked = false;
+        status.textContent = "Not filed";
+      });
+    });
+  </script>
+</body>
+</html>

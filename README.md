@@ -44,7 +44,7 @@ Design notes that are not a user guide live in [docs/future-phase-corrections.md
 
 ## Integrate an application
 
-[docs/integrate-your-app.md](docs/integrate-your-app.md) is the path from this checkout to a scenario on your own loopback app. `reproseed init` writes a starter scenario. `reproseed doctor` checks it without sending `POST /__reproseed/reset`. `examples/opt-in-ticket` is one application that opts in. It is not one of the two demos below, and it is not in the npm package. The published 0.1.0 package does not include `doctor` or `init`.
+[docs/integrate-your-app.md](docs/integrate-your-app.md) is the path from this checkout to a scenario on your own loopback app. `reproseed init` writes a starter scenario. `reproseed doctor` checks it without sending `POST /__reproseed/reset`. For a record-count scenario it checks the current clean-state items for the record shape the minimizer reads, and it treats a connection failure, a redirect, a missing page, and a server error as different results. `examples/opt-in-ticket` is one application that opts in. Its default page is buggy. A test-only fixed page is used to show the same generated spec passing, and that page is not what `npm run demo:ticket` serves. The example is not one of the two demos below, and it is not in the npm package. The published 0.1.0 package does not include `doctor` or `init`.
 
 ## Quick start
 

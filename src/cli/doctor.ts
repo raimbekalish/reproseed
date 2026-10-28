@@ -1,4 +1,5 @@
 import { cleanStateVerify } from "../core/clean-state.ts";
+import type { Oracle, Step } from "../core/types.ts";
 import type { ScenarioDocument } from "./scenario-file.ts";
 import {
   assertNoEmbeddedResetAuthorization,
@@ -7,7 +8,7 @@ import {
 } from "./scenario-file.ts";
 import { EXIT } from "./errors.ts";
 import { describeChromiumInstallation, type ChromiumInstallation } from "../runner/session.ts";
-import type { FetchLike } from "../runner/reset.ts";
+import { formatRecordShapeProblems, recordShapeProblems, type FetchLike } from "../runner/reset.ts";
 import { canonicalOrigin, resolveAuthorizedUrl } from "../runner/safety.ts";
 
 const PROBE_TIMEOUT_MS = 10_000;
@@ -79,6 +80,8 @@ export async function collectDoctorChecks(input: DoctorCommand): Promise<DoctorC
       ? await probeTarget({
           origin,
           appId,
+          steps: document.steps,
+          oracle: document.oracle,
           verifyPath: cleanStateVerify(document.reset).path,
           verifyIsDefault: document.reset.verify === undefined,
           fetchImpl: guardedFetch(input.fetchImpl ?? fetch),
@@ -313,31 +316,99 @@ function skippedNetwork(reason: string): NetworkChecks {
 async function probeTarget(input: {
   origin: string;
   appId: string;
+  steps: readonly Step[];
+  oracle: Oracle;
   verifyPath: string;
   verifyIsDefault: boolean;
   fetchImpl: FetchLike;
 }): Promise<NetworkChecks> {
-  const root = await probeGet(input.fetchImpl, input.origin, "/");
-  if (root.kind === "network") {
+  const navigation = navigationPaths(input.steps);
+  const readiness = await probeNavigation(input.fetchImpl, input.origin, navigation);
+  if (readiness.kind === "unreachable") {
     const reason = `Skipped because ${input.origin} did not accept a connection.`;
     return {
-      available: check("target-available", "fail", root.detail),
+      available: check("target-available", "fail", readiness.detail),
       identity: check("target-identity", "skipped", reason),
       cleanState: check("clean-state-endpoint", "skipped", reason),
     };
   }
-  const available =
-    root.kind === "redirect"
-      ? check("target-available", "fail", `GET / on ${input.origin} was a redirect. Doctor did not follow it.`)
-      : check("target-available", "pass", `GET / on ${input.origin} returned status ${root.status}.`);
   const identity = await probeIdentity(input);
   const cleanState = await probeCleanState(input);
-  return { available, identity, cleanState };
+  return { available: readiness.check, identity, cleanState };
+}
+
+function navigationPaths(steps: readonly Step[]): { paths: string[]; fallback: boolean } {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  for (const step of steps) {
+    if (step.kind !== "goto" || seen.has(step.path)) {
+      continue;
+    }
+    seen.add(step.path);
+    paths.push(step.path);
+  }
+  if (paths.length === 0) {
+    return { paths: ["/"], fallback: true };
+  }
+  return { paths, fallback: false };
+}
+
+async function probeNavigation(
+  fetchImpl: FetchLike,
+  origin: string,
+  navigation: { paths: string[]; fallback: boolean },
+): Promise<{ kind: "unreachable"; detail: string } | { kind: "checked"; check: DoctorCheck }> {
+  const lines: string[] = [];
+  let reachable = false;
+  let failed = false;
+  for (const path of navigation.paths) {
+    const result = await probeGet(fetchImpl, origin, path);
+    if (result.kind === "network") {
+      if (!reachable) {
+        return { kind: "unreachable", detail: result.detail };
+      }
+      failed = true;
+      lines.push(result.detail);
+      continue;
+    }
+    if (result.kind === "refused") {
+      failed = true;
+      lines.push(result.detail);
+      continue;
+    }
+    reachable = true;
+    if (result.kind === "redirect") {
+      failed = true;
+      lines.push(`GET ${path} on ${origin} was a redirect. Doctor did not follow it.`);
+      continue;
+    }
+    if (result.status >= 200 && result.status < 300) {
+      lines.push(`GET ${path} on ${origin} returned status ${result.status}.`);
+      continue;
+    }
+    failed = true;
+    lines.push(navigationFailure(origin, path, result.status));
+  }
+  const suffix = navigation.fallback ? " The scenario has no goto step, so this request is GET /." : "";
+  return {
+    kind: "checked",
+    check: check("target-available", failed ? "fail" : "pass", `${lines.join(" ")}${suffix}`),
+  };
+}
+
+function navigationFailure(origin: string, path: string, status: number): string {
+  if (status === 404) {
+    return `GET ${path} on ${origin} returned status 404. The navigation path is missing.`;
+  }
+  if (status >= 500) {
+    return `GET ${path} on ${origin} returned status ${status}. The server responded, but the response is a server failure.`;
+  }
+  return `GET ${path} on ${origin} returned status ${status}. The server responded, but the response is not successful.`;
 }
 
 async function probeIdentity(input: { origin: string; appId: string; fetchImpl: FetchLike }): Promise<DoctorCheck> {
   const result = await probeGet(input.fetchImpl, input.origin, "/__reproseed/identity");
-  if (result.kind === "network") {
+  if (result.kind === "network" || result.kind === "refused") {
     return check("target-identity", "fail", result.detail);
   }
   if (result.kind === "redirect") {
@@ -369,6 +440,7 @@ async function probeIdentity(input: { origin: string; appId: string; fetchImpl: 
 
 async function probeCleanState(input: {
   origin: string;
+  oracle: Oracle;
   verifyPath: string;
   verifyIsDefault: boolean;
   fetchImpl: FetchLike;
@@ -380,7 +452,7 @@ async function probeCleanState(input: {
     return check("clean-state-endpoint", "fail", cliMessage(error));
   }
   const result = await probeGet(input.fetchImpl, input.origin, `${url.pathname}${url.search}`);
-  if (result.kind === "network") {
+  if (result.kind === "network" || result.kind === "refused") {
     return check("clean-state-endpoint", "fail", result.detail);
   }
   if (result.kind === "redirect") {
@@ -395,17 +467,30 @@ async function probeCleanState(input: {
   if (!Array.isArray(result.body)) {
     return check("clean-state-endpoint", "fail", `GET ${input.verifyPath} did not return a JSON array.`);
   }
+  if (input.oracle.id === "record-count" && result.body.length > 0) {
+    const problems = recordShapeProblems(result.body);
+    if (problems.length > 0) {
+      return check(
+        "clean-state-endpoint",
+        "fail",
+        `GET ${input.verifyPath} returned a JSON array that the record-count check cannot read. ${formatRecordShapeProblems(problems)} Each item needs string id, email, and note, and numeric createdAt. Record values are not printed.`,
+      );
+    }
+  }
   const suffix = input.verifyIsDefault ? " reset.verify is omitted, so this is the default clean-state path." : "";
+  const shape =
+    input.oracle.id === "record-count" && result.body.length > 0 ? " Each item matches the record-count shape." : "";
   const noun = result.body.length === 1 ? "item" : "items";
   return check(
     "clean-state-endpoint",
     "pass",
-    `GET ${input.verifyPath} returned a JSON array with ${result.body.length} ${noun}.${suffix}`,
+    `GET ${input.verifyPath} returned a JSON array with ${result.body.length} ${noun}.${shape}${suffix}`,
   );
 }
 
 type ProbeGet =
   | { kind: "network"; detail: string }
+  | { kind: "refused"; detail: string }
   | { kind: "redirect" }
   | { kind: "http"; status: number; body: unknown; bodyError?: string };
 
@@ -414,10 +499,10 @@ async function probeGet(fetchImpl: FetchLike, origin: string, path: string): Pro
   try {
     url = resolveAuthorizedUrl(origin, path);
   } catch (error) {
-    return { kind: "network", detail: cliMessage(error) };
+    return { kind: "refused", detail: cliMessage(error) };
   }
   if (url.origin !== canonicalOrigin(origin)) {
-    return { kind: "network", detail: "doctor refused to contact a URL outside the authorized origin" };
+    return { kind: "refused", detail: "doctor refused to contact a URL outside the authorized origin" };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
