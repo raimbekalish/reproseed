@@ -21,6 +21,8 @@ const REQUIRED = [
   "package/dist/export/dom-text.ts",
   "package/examples/duplicate-submit/scenario.json",
   "package/examples/stale-search/scenario.json",
+  "package/docs/integrate-your-app.md",
+  "package/docs/trace-evidence.md",
 ] as const;
 
 const FORBIDDEN_NAME =
@@ -56,12 +58,23 @@ describe("npm package smoke", () => {
         version?: string;
         license?: string;
         bin?: { reproseed?: string };
+        dependencies?: { playwright?: string; "@playwright/test"?: string };
       };
       assert.equal(manifest.name, "reproseed");
       assert.equal(Object.hasOwn(manifest, "private"), false);
       assert.equal(manifest.version, VERSION);
       assert.equal(manifest.license, "MIT");
       assert.equal(manifest.bin?.reproseed, "./dist/cli.js");
+      assert.equal(manifest.dependencies?.playwright, "1.64.1");
+      assert.equal(manifest.dependencies?.["@playwright/test"], undefined);
+      const readme = await tarFile(tarball, "package/README.md");
+      assert.match(readme, /docs\/integrate-your-app\.md/);
+      assert.match(readme, /docs\/trace-evidence\.md/);
+      assert.match(readme, /@playwright\/test/);
+      const integrate = await tarFile(tarball, "package/docs/integrate-your-app.md");
+      const traceDoc = await tarFile(tarball, "package/docs/trace-evidence.md");
+      assert.match(integrate, /reproseed doctor/);
+      assert.match(traceDoc, /npx playwright show-trace/);
       const license = await tarFile(tarball, "package/LICENSE");
       assert.equal(license, await readFile(join(REPO, "LICENSE"), "utf8"));
       assert.equal(license.startsWith(`MIT License\n\n${COPYRIGHT}\n`), true);
@@ -85,6 +98,10 @@ describe("npm package smoke", () => {
       const pkgRoot = join(work, "node_modules/reproseed");
       await assert.rejects(access(join(pkgRoot, "src")));
       await assert.rejects(access(join(work, "src")));
+      await assert.rejects(access(join(work, "node_modules/@playwright/test")));
+      await access(join(work, "node_modules/playwright/cli.js"));
+      await access(join(pkgRoot, "docs/integrate-your-app.md"));
+      await access(join(pkgRoot, "docs/trace-evidence.md"));
       const versionFile = fileURLToPath(new URL("../../package.json", pathToFileURL(join(pkgRoot, "dist/cli/main.js"))));
       assert.equal(relative(pkgRoot, versionFile), "package.json");
       assert.equal(relative(REPO, pkgRoot).startsWith(".."), true);

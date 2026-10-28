@@ -9,6 +9,8 @@
   },
   "files": [
     "dist",
+    "docs/integrate-your-app.md",
+    "docs/trace-evidence.md",
     "examples/duplicate-submit/scenario.json",
     "examples/stale-search/scenario.json",
     "README.md"
@@ -31,7 +33,7 @@
     "test:export": "node --test test/export/regression.test.ts test/export/stale-regression.test.ts",
     "test:search": "node --test examples/stale-search/*.test.ts",
     "test:cli": "node --test test/cli/args.test.ts test/cli/scenario.test.ts test/cli/command.test.ts test/cli/doctor.test.ts test/cli/init.test.ts",
-    "test:cli:e2e": "node --test --test-concurrency=1 test/cli/e2e.test.ts test/cli/opt-in-minimize.test.ts",
+    "test:cli:e2e": "node --test --test-concurrency=1 test/cli/e2e.test.ts test/cli/opt-in-minimize.test.ts test/cli/consumer-install.test.ts",
     "test:browsers": "npm run test:demo && npm run test:search && npm run test:runner && npm run test:export && npm run test:cli:e2e",
     "test:package": "node --test test/package/smoke.test.ts",
     "demo": "node examples/duplicate-submit/server.ts",
@@ -39,10 +41,10 @@
     "demo:ticket": "node examples/opt-in-ticket/server.ts"
   },
   "dependencies": {
-    "playwright": "^1.64.1"
+    "playwright": "1.64.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "1.64.1",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3"
   }

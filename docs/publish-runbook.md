@@ -1,5 +1,7 @@
 # Publish runbook for v0.1.0
 
+The next candidate is 0.2.0. It is not approved for publication by this file. `package.json` stays at `0.1.0`, and tag `v0.1.0` stays where it is, until the owner publishes. The candidate checks are [v0.2.0-release-checklist.md](v0.2.0-release-checklist.md). The steps below remain the record of the first publication.
+
 This runbook prepares the first npm publication of ReproSeed. It does not authorize that publication, and following the preparation section does not publish the package.
 
 Two kinds of steps are separated below. Preparation is safe to repeat. Publication changes the public registry or creates a permanent git tag. Do those only after the owner explicitly approves the release commit.
