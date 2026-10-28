@@ -111,6 +111,10 @@ describe("npm package smoke", () => {
       assert.equal(doctorHelp.code, 0, doctorHelp.stderr);
       assert.match(doctorHelp.stdout, /does not send POST \/__reproseed\/reset/);
       assert.match(doctorHelp.stdout, /does not launch a browser/);
+      const minimizeHelp = await run(bin, ["minimize", "--help"], work, 30_000, cleanEnv());
+      assert.equal(minimizeHelp.code, 0, minimizeHelp.stderr);
+      assert.match(minimizeHelp.stdout, /--trace <file\.zip>/);
+      assert.match(minimizeHelp.stdout, /Tracing stays off during minimization/);
       const token = "package-smoke-token-value";
       const created = await run(bin, ["init", "scenario.json", "--oracle", "dom-text"], work, 30_000, cleanEnv());
       assert.equal(created.code, 0, `${created.stdout}\n${created.stderr}`);
@@ -150,6 +154,12 @@ describe("npm package smoke", () => {
       assert.match(doctor.stdout, /not-verified\s+reset-accepted/);
       assert.equal(doctor.stdout.includes(token), false);
       assert.equal(doctor.stderr.includes(token), false);
+      const unsafeTrace = await run(bin, ["minimize", "probe.json", "--trace", "../repro.zip"], work, 30_000, doctorEnv);
+      assert.equal(unsafeTrace.code, 1, `${unsafeTrace.stdout}\n${unsafeTrace.stderr}`);
+      assert.match(unsafeTrace.stderr, /must stay inside the current directory/);
+      assert.equal(unsafeTrace.stdout.includes(token), false);
+      assert.equal(unsafeTrace.stderr.includes(token), false);
+      await assert.rejects(access(join(work, "repro.zip")));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

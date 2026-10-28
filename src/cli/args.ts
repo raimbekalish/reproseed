@@ -22,6 +22,7 @@ export type ParsedArgs =
       scenarioPath: string;
       reportPath: string;
       specPath: string;
+      tracePath?: string;
       force: boolean;
       tuneDelays?: TimingSearchConfig;
     };
@@ -160,6 +161,7 @@ function parseMinimize(args: readonly string[]): ParsedArgs {
   let scenarioPath: string | undefined;
   let reportPath = DEFAULT_REPORT_PATH;
   let specPath = DEFAULT_SPEC_PATH;
+  let tracePath: string | undefined;
   let force = false;
   let tuneDelays = false;
   let resolutionMs: number | undefined;
@@ -167,6 +169,7 @@ function parseMinimize(args: readonly string[]): ParsedArgs {
   let maxWallClockMs: number | undefined;
   let sawReport = false;
   let sawSpec = false;
+  let sawTrace = false;
   let sawResolution = false;
   let sawMaxReplays = false;
   let sawMaxWall = false;
@@ -249,6 +252,16 @@ function parseMinimize(args: readonly string[]): ParsedArgs {
         index = read.index;
         continue;
       }
+      if (arg === "--trace" || arg.startsWith("--trace=")) {
+        if (sawTrace) {
+          throw new CliError("--trace was provided more than once", EXIT.usage);
+        }
+        const read = readOption(args, index, arg, "trace");
+        tracePath = read.value;
+        sawTrace = true;
+        index = read.index;
+        continue;
+      }
       throw new CliError(`unknown option ${arg}`, EXIT.usage);
     }
     if (scenarioPath !== undefined) {
@@ -268,6 +281,7 @@ function parseMinimize(args: readonly string[]): ParsedArgs {
     scenarioPath,
     reportPath,
     specPath,
+    ...(tracePath !== undefined ? { tracePath } : {}),
     force,
     ...(tuneDelays
       ? {
@@ -312,7 +326,7 @@ function readOption(
   args: readonly string[],
   index: number,
   arg: string,
-  name: "report" | "spec",
+  name: "report" | "spec" | "trace",
 ): { value: string; index: number } {
   const prefix = `--${name}=`;
   if (arg.startsWith(prefix)) {

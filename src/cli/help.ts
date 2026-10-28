@@ -18,7 +18,7 @@ Usage:
   reproseed --version
   reproseed init [scenario.json] [--oracle record-count|dom-text] [--force]
   reproseed doctor <scenario.json>
-  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--force] [--tune-delays]
+  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--trace <file.zip>] [--force] [--tune-delays]
 
 Commands:
   init        Write a starter scenario for a loopback application
@@ -99,7 +99,7 @@ ${EXIT.unstable} and ${EXIT.budget} are minimize results. doctor does not use th
 `;
 
 export const MINIMIZE_HELP = `Usage:
-  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--force] [--tune-delays]
+  reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--trace <file.zip>] [--force] [--tune-delays]
 
 Arguments:
   scenario.json       Scenario file. It must not contain resetAuthorization.
@@ -108,7 +108,12 @@ Options:
   --report <file>     Sanitized JSON report (default: artifacts/report.json)
   --spec <file>       Playwright test written only after verification
                       (default: artifacts/minimized.spec.ts)
-  --force             Replace an existing report or spec file
+  --trace <file.zip>  After a verified minimization, replay the exported
+                      scenario once with Playwright tracing and write that zip.
+                      Off by default. This replay is separate from the five
+                      verification replays and is omitted from replay counts.
+                      Tracing stays off during minimization.
+  --force             Replace an existing report, spec, or trace file
   --tune-delays       After a verified step minimization, search for a shorter
                       network response delay. Off by default.
   --timing-resolution <ms>
@@ -146,7 +151,13 @@ loopback origin, and the file cannot supply a script or a shell command.
 Outputs stay inside the current directory. Symlinked output paths are refused.
 Existing files are left unchanged unless --force is set.
 A run that does not verify writes the report and does not write or replace the spec.
+--trace is refused when it collides with the scenario, report, or spec path.
+Tracing during minimization is off. The extra replay can miss a race because
+tracing changes timing, so a saved zip is verified evidence only when that
+replay reproduces the verified failure. The zip can contain page text, input
+values, screenshots, and network bodies. It is not redacted.
 verified-one-minimal is 1-minimal under single deletion. It is not a global proof.
+A trace is not a proof that capture always succeeds.
 
 Exit codes:
   ${EXIT.verified}  Verified minimization. The report and regression test were written.
@@ -154,6 +165,10 @@ Exit codes:
   ${EXIT.unstable}  No reproducible failure, flaky baseline, or unstable result.
   ${EXIT.budget}  The replay or wall-clock budget was exhausted.
   ${EXIT.internal}  The runner or an output write failed.
+
+A trace request does not change these codes. When the extra replay misses the
+failure, or the zip cannot be saved, the command keeps the minimization exit
+code and writes a warning. The report and spec from that run stay in place.
 
 The regression test asserts the scenario's intended result.
 A record-count oracle asserts the intended record count.

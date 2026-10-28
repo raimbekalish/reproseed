@@ -1,18 +1,32 @@
-import { resolve } from "node:path";
+import { unlink } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 
 import { cleanStateVerify } from "../core/clean-state.ts";
 import type { DurationOptimization, TimingSearchConfig } from "../core/duration.ts";
-import type { MinimizeReport, MinimizeStatus, Scenario } from "../core/types.ts";
+import type { ExecutionOutcome, MinimizeReport, MinimizeStatus, Scenario, TargetSignature } from "../core/types.ts";
 import { exportPlaywrightTest } from "../export/playwright.ts";
 import { minimizeWithBrowser } from "../runner/minimize-browser.ts";
 import { isDurationTunedResult, type DurationTunedResult } from "../runner/minimize-duration.ts";
 import { prepareReplay } from "../runner/plan.ts";
 import { sanitizeArtifact } from "../runner/report.ts";
+import { replayIsolated } from "../runner/replay.ts";
 import { resetAndConfirmEmpty, ResetFailed } from "../runner/reset.ts";
 import { ReplayTimeout } from "../runner/timing.ts";
+import {
+  classifyTraceEvidence,
+  formatSkippedTrace,
+  formatTraceEvidence,
+  type TraceEvidence,
+} from "../runner/trace-evidence.ts";
 import { CliError, EXIT } from "./errors.ts";
 import { formatSummary } from "./format.ts";
-import { assertCanReplace, ensureOutputDirectory, resolveOutputPath, writePublishedFile } from "./outputs.ts";
+import {
+  assertCanReplace,
+  ensureOutputDirectory,
+  publishExistingFile,
+  resolveOutputPath,
+  writePublishedFile,
+} from "./outputs.ts";
 import { redactSecrets } from "./redact.ts";
 import { loadScenarioFile } from "./scenario-file.ts";
 
@@ -29,11 +43,17 @@ export type MinimizeRunner = (input: {
   tuneDelays?: TimingSearchConfig;
 }) => Promise<MinimizeReport | DurationTunedResult>;
 export type TargetPreflight = (scenario: Scenario) => Promise<void>;
+export type TraceCapture = (input: {
+  scenario: Scenario;
+  stepIds: readonly string[];
+  tracePath: string;
+}) => Promise<{ outcome: ExecutionOutcome; traceSaved: boolean; traceError?: string }>;
 
 export type MinimizeCommand = {
   scenarioPath: string;
   reportPath: string;
   specPath: string;
+  tracePath?: string;
   force: boolean;
   tuneDelays?: TimingSearchConfig;
   cwd: string;
@@ -42,6 +62,7 @@ export type MinimizeCommand = {
   stderr: (text: string) => void;
   minimize?: MinimizeRunner;
   preflight?: TargetPreflight;
+  captureTrace?: TraceCapture;
 };
 
 /**
@@ -62,14 +83,25 @@ export async function runMinimizeCommand(input: MinimizeCommand): Promise<number
 
   const reportPath = await resolveOutputPath(input.cwd, input.reportPath, "report");
   const specPath = await resolveOutputPath(input.cwd, input.specPath, "spec");
+  const tracePath =
+    input.tracePath === undefined ? undefined : await resolveOutputPath(input.cwd, input.tracePath, "trace");
   const scenarioPath = resolve(input.cwd, input.scenarioPath);
-  if (scenarioPath === reportPath || scenarioPath === specPath) {
+  if (scenarioPath === reportPath || scenarioPath === specPath || (tracePath !== undefined && scenarioPath === tracePath)) {
     throw new CliError("output path must not replace the scenario file", EXIT.usage);
+  }
+  if (tracePath !== undefined && (tracePath === reportPath || tracePath === specPath)) {
+    throw new CliError("trace path must not replace the report or spec", EXIT.usage);
   }
   await assertCanReplace(reportPath, input.force);
   await assertCanReplace(specPath, input.force);
+  if (tracePath !== undefined) {
+    await assertCanReplace(tracePath, input.force);
+  }
   await ensureOutputDirectory(reportPath);
   await ensureOutputDirectory(specPath);
+  if (tracePath !== undefined) {
+    await ensureOutputDirectory(tracePath);
+  }
 
   stderr(`Checking ${scenario.target.origin} for app ${scenario.target.appId}.\n`);
   await (input.preflight ?? preflightTarget)(scenario);
@@ -126,6 +158,9 @@ export async function runMinimizeCommand(input: MinimizeCommand): Promise<number
 
   if (exportFailure !== undefined) {
     stdout(formatSummary({ report, reportPath, specPath: undefined, ...(optimization !== undefined ? { optimization } : {}) }));
+    if (tracePath !== undefined) {
+      stderr(formatSkippedTrace("the regression test was not written."));
+    }
     throw new CliError(
       exportFailure instanceof Error ? exportFailure.message : "regression test could not be generated",
       EXIT.internal,
@@ -136,6 +171,9 @@ export async function runMinimizeCommand(input: MinimizeCommand): Promise<number
       await writePublishedFile(specPath, specSource, input.force);
     } catch (error) {
       stdout(formatSummary({ report, reportPath, specPath: undefined, ...(optimization !== undefined ? { optimization } : {}) }));
+      if (tracePath !== undefined) {
+        stderr(formatSkippedTrace("the regression test was not written."));
+      }
       if (error instanceof CliError) {
         throw error;
       }
@@ -147,7 +185,92 @@ export async function runMinimizeCommand(input: MinimizeCommand): Promise<number
   if (!verified && input.force) {
     stderr("Existing spec was not replaced because minimization did not verify.\n");
   }
+  if (tracePath !== undefined) {
+    if (!verified || specSource === undefined) {
+      stderr(formatSkippedTrace("this run did not write a verified regression test."));
+    } else {
+      await recordTraceEvidence({
+        scenario: exportScenario,
+        report,
+        tracePath,
+        force: input.force,
+        stdout,
+        stderr,
+        capture: input.captureTrace ?? defaultCapture,
+      });
+    }
+  }
   return exitCodeForVerified(report.status, specSource !== undefined);
+}
+
+async function recordTraceEvidence(input: {
+  scenario: Scenario;
+  report: MinimizeReport;
+  tracePath: string;
+  force: boolean;
+  stdout: (text: string) => void;
+  stderr: (text: string) => void;
+  capture: TraceCapture;
+}): Promise<void> {
+  const temp = join(dirname(input.tracePath), `.reproseed-trace-${process.pid}-${Date.now()}.zip`);
+  try {
+    const captured = await input.capture({
+      scenario: input.scenario,
+      stepIds: input.report.keptStepIds,
+      tracePath: temp,
+    });
+    const evidence = classifyTraceEvidence({
+      target: targetSignature(input.report),
+      outcome: captured.outcome,
+      traceSaved: captured.traceSaved,
+    });
+    if (evidence.status === "failed") {
+      await unlink(temp).catch(() => undefined);
+      input.stderr(formatTraceEvidence(evidenceFromCapture(evidence, captured.traceError), input.tracePath));
+      return;
+    }
+    await publishExistingFile(temp, input.tracePath, input.force);
+    input.stdout(formatTraceEvidence(evidence, input.tracePath));
+    if (evidence.status === "not-reproduced") {
+      input.stderr(
+        "Trace evidence: not-reproduced. The extra replay did not reproduce the verified failure. The minimization report and regression test were left unchanged.\n",
+      );
+    }
+  } catch (error) {
+    await unlink(temp).catch(() => undefined);
+    const message = error instanceof Error ? error.message : "trace capture failed";
+    input.stderr(formatTraceEvidence({ status: "failed", detail: message }, input.tracePath));
+  }
+}
+
+function evidenceFromCapture(evidence: TraceEvidence, traceError: string | undefined): TraceEvidence {
+  if (traceError === undefined || traceError === "" || evidence.detail.includes(traceError)) {
+    return evidence;
+  }
+  return { status: "failed", detail: `${evidence.detail} (${traceError})` };
+}
+
+function targetSignature(report: MinimizeReport): TargetSignature | undefined {
+  const signature = report.baselineSignature;
+  if (signature === undefined) {
+    return undefined;
+  }
+  if (signature.oracleId === "record-count" || signature.oracleId === "dom-text") {
+    return signature;
+  }
+  return undefined;
+}
+
+async function defaultCapture(input: {
+  scenario: Scenario;
+  stepIds: readonly string[];
+  tracePath: string;
+}): Promise<{ outcome: ExecutionOutcome; traceSaved: boolean; traceError?: string }> {
+  return replayIsolated({
+    scenario: input.scenario,
+    stepIds: input.stepIds,
+    tracePath: input.tracePath,
+  });
 }
 
 async function defaultMinimize(input: {

@@ -7,6 +7,7 @@ const EXTENSION = {
   report: ".json",
   spec: ".ts",
   scenario: ".json",
+  trace: ".zip",
 } as const;
 
 export async function resolveOutputPath(
@@ -102,6 +103,40 @@ export async function writePublishedFile(path: string, contents: string, force: 
     await rename(temp, path);
   } catch (error) {
     await unlink(temp).catch(() => undefined);
+    if (error instanceof CliError) {
+      throw error;
+    }
+    if (isNodeError(error, "EACCES") || isNodeError(error, "EPERM") || isNodeError(error, "EROFS")) {
+      throw new CliError(`cannot write ${path}`, EXIT.internal);
+    }
+    throw new CliError(error instanceof Error ? error.message : "output could not be written", EXIT.internal);
+  }
+}
+
+/**
+ * Moves a file that is already on disk into `path`.
+ * Without `force`, an existing destination is left untouched.
+ */
+export async function publishExistingFile(source: string, path: string, force: boolean): Promise<void> {
+  try {
+    if (!force) {
+      try {
+        await link(source, path);
+      } catch (error) {
+        if (isNodeError(error, "EACCES") || isNodeError(error, "EPERM") || isNodeError(error, "EROFS")) {
+          throw new CliError(`cannot write ${path}`, EXIT.internal);
+        }
+        if (isNodeError(error, "EEXIST")) {
+          throw new CliError(`refusing to overwrite ${path}; pass --force to replace it`, EXIT.usage);
+        }
+        throw error;
+      }
+      await unlink(source).catch(() => undefined);
+      return;
+    }
+    await rename(source, path);
+  } catch (error) {
+    await unlink(source).catch(() => undefined);
     if (error instanceof CliError) {
       throw error;
     }

@@ -8,6 +8,7 @@ Work toward 0.2.0. This section is not a release. The package version stays 0.1.
 
 ### Added
 
+- `reproseed minimize --trace <file.zip>` records one Playwright trace after a verified minimization. The extra replay is separate from the five verification replays and is omitted from replay counts. A zip is verified evidence only when that replay reproduces the verified failure. Tracing stays off during minimization, and a trace failure does not change the minimization exit code or replace the report and spec. See [docs/trace-evidence.md](docs/trace-evidence.md).
 - `reproseed doctor` checks a scenario, the loopback target, Chromium, and the clean-state GET without sending `POST /__reproseed/reset` or launching a browser.
 - `reproseed init` writes a starter scenario for the record-count or DOM-text oracle. It does not embed a reset credential or a production URL.
 - `examples/opt-in-ticket`, a loopback application that opts in to identity, authorized reset, and a read-only clean-state list. It does not use the other demo servers.

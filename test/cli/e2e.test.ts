@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { get as httpGet, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, before, after } from "node:test";
@@ -277,7 +278,16 @@ describe("built reproseed cli", { concurrency: false }, () => {
       await symlink(NODE_MODULES, join(work, "node_modules"));
       const result = await runCli(
         cli,
-        ["minimize", EXAMPLE, "--report", "artifacts/report.json", "--spec", "artifacts/minimized.spec.ts"],
+        [
+          "minimize",
+          EXAMPLE,
+          "--report",
+          "artifacts/report.json",
+          "--spec",
+          "artifacts/minimized.spec.ts",
+          "--trace",
+          "artifacts/repro.zip",
+        ],
         { cwd: work, env: targetEnv(demo.origin, token), timeout: 540_000, token },
       );
       assert.equal(result.code, EXIT.verified, `${result.stdout}\n${result.stderr}`);
@@ -289,6 +299,10 @@ describe("built reproseed cli", { concurrency: false }, () => {
       assert.match(result.stdout, /Removed steps: preview, note, decoy-wait/);
       assert.match(result.stdout, /Failure: DUPLICATE \(email=a@example.com, actual=2, expect=1\)/);
       assert.match(result.stdout, /verify: 5/);
+      assert.match(result.stdout, /Trace evidence: verified/);
+      assert.match(result.stdout, /omitted from the replay counts/);
+      assert.equal(result.stdout.includes("Trace evidence: not-reproduced"), false);
+      assert.equal(result.stdout.includes("Trace evidence: failed"), false);
       assert.match(result.stdout, /not a proof of the globally shortest reproduction/);
       assert.equal(/guaranteed/i.test(result.stdout), false);
       console.log(result.stdout);
@@ -339,6 +353,13 @@ describe("built reproseed cli", { concurrency: false }, () => {
           2,
         ),
       );
+      assert.equal(
+        artifact.report.counts.replayExecutions,
+        artifact.report.counts.baselineReplays + artifact.report.counts.searchReplays + artifact.report.counts.verifyReplays,
+      );
+      const tracePath = join(work, "artifacts/repro.zip");
+      assert.deepEqual((await readdir(join(work, "artifacts"))).sort(), ["minimized.spec.ts", "report.json", "repro.zip"]);
+      await assertPlaywrightTrace(tracePath, token);
 
       await writePlaywrightConfig(work);
       const red = await runAgainst(work, "buggy", token);
@@ -407,6 +428,8 @@ describe("built reproseed cli", { concurrency: false }, () => {
         /Failure: DOM_MISMATCH \(selector=#results, expect="Results for beta", actual="Results for alpha \(outdated\)"\)/,
       );
       assert.match(result.stdout, /verify: 5/);
+      assert.equal(result.stdout.includes("Trace evidence"), false);
+      await assert.rejects(access(join(work, "artifacts/repro.zip")));
       assert.match(result.stdout, /intended result text/);
       console.log(result.stdout);
       const specPath = join(work, "artifacts/stale-search.spec.ts");
@@ -482,6 +505,131 @@ export default defineConfig({
     assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
   });
 });
+
+const TRACE_LISTING = `
+import sys, zipfile
+archive = zipfile.ZipFile(sys.argv[1])
+print("\\n".join(archive.namelist()))
+print("---TRACE---")
+for name in archive.namelist():
+    if name.endswith(".trace") or name.endswith(".network"):
+        print(archive.read(name).decode("utf-8", "replace"))
+`;
+
+async function assertPlaywrightTrace(zipPath: string, token: string): Promise<void> {
+  const zip = await readFile(zipPath);
+  assert.equal(zip.subarray(0, 2).toString(), "PK");
+  assert.equal(zip.includes(Buffer.from(token)), false);
+  assert.equal(zip.includes(Buffer.from("resetAuthorization")), false);
+  const listed = spawnSync("python3", ["-c", TRACE_LISTING, zipPath], { encoding: "utf8" });
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout.includes(token), false);
+  assert.equal(listed.stdout.includes("resetAuthorization"), false);
+  assert.match(listed.stdout, /ReproSeed evidence/);
+  assert.match(listed.stdout, /\.trace/);
+  assert.match(listed.stdout, /"method":"goto"/);
+  assert.match(listed.stdout, /"method":"fill"/);
+  assert.match(listed.stdout, /"method":"click"/);
+  await openTraceViewer(zipPath);
+}
+
+async function openTraceViewer(zipPath: string): Promise<void> {
+  const child = spawn(process.execPath, [
+    join(REPO, "node_modules/playwright/cli.js"),
+    "show-trace",
+    zipPath,
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "0",
+  ], {
+    env: { ...process.env, PWTEST_UNDER_TEST: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  let settled = false;
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`trace viewer did not listen\n${output}`));
+        }
+      }, 20_000);
+      const finish = (handler: () => void): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        handler();
+      };
+      const onData = (chunk: Buffer): void => {
+        output += chunk.toString("utf8");
+        const match = output.match(/Listening on (http:\/\/127\.0\.0\.1:\d+)/);
+        const listening = match?.[1];
+        if (listening !== undefined) {
+          finish(() => resolve(listening));
+        }
+      };
+      child.stdout?.on("data", onData);
+      child.stderr?.on("data", onData);
+      child.once("exit", (code) => {
+        finish(() => reject(new Error(`trace viewer exited ${code ?? "unknown"}\n${output}`)));
+      });
+    });
+    const root = await httpRequest(url);
+    assert.equal(root.status, 302, root.body.toString("utf8"));
+    const location = root.headers.location;
+    if (typeof location !== "string") {
+      throw new Error("trace viewer did not redirect");
+    }
+    const pageUrl = new URL(location, url);
+    assert.match(pageUrl.pathname, /index\.html$/);
+    const trace = pageUrl.searchParams.get("trace") ?? "";
+    const page = await httpRequest(pageUrl.toString());
+    assert.equal(page.status, 200);
+    assert.match(page.body.toString("utf8"), /html/i);
+    const fileUrl = new URL("/trace/file", url);
+    fileUrl.searchParams.set("path", traceFilePath(trace));
+    const file = await httpRequest(fileUrl.toString());
+    assert.equal(file.status, 200, file.body.subarray(0, 180).toString("utf8"));
+    assert.equal(file.body.subarray(0, 2).toString(), "PK");
+  } finally {
+    stopChild(child);
+  }
+}
+
+function traceFilePath(trace: string): string {
+  if (trace.startsWith("file?path=")) {
+    const path = new URL(trace, "http://127.0.0.1").searchParams.get("path");
+    if (path === null || path === "") {
+      throw new Error("trace viewer omitted the trace path");
+    }
+    return path;
+  }
+  if (trace.startsWith("file:")) {
+    return fileURLToPath(trace);
+  }
+  throw new Error(`unexpected trace location ${trace}`);
+}
+
+function httpRequest(target: string): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const request = httpGet(target, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () => {
+        resolve({
+          status: response.statusCode ?? 0,
+          headers: response.headers,
+          body: Buffer.concat(chunks),
+        });
+      });
+    });
+    request.on("error", reject);
+  });
+}
 
 function baseEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
