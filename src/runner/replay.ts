@@ -16,7 +16,7 @@ import { readRecordList, resetAndConfirmEmpty, ResetFailed, type FetchLike } fro
 import { assertPageStayed } from "./safety.ts";
 import { createBrowserPool, launchChromium, type BrowserPool } from "./session.ts";
 import { settleAnimationFrames, trackOriginRequests } from "./settle.ts";
-import { TRACE_START_OPTIONS } from "./trace-evidence.ts";
+import { settleTraceSave, TRACE_START_OPTIONS } from "./trace-evidence.ts";
 import {
   bounded,
   CLEANUP_BUDGET_MS,
@@ -167,21 +167,23 @@ async function executePrepared(
       const notes: string[] = [];
       if (tracingStarted) {
         tracingStarted = false;
-        try {
-          await bounded(
-            current.tracing.stop(trace === undefined ? {} : { path: trace.path }),
-            CLEANUP_BUDGET_MS,
-            "trace save timed out",
-          );
-          if (trace !== undefined) {
-            trace.saved = true;
+        if (trace === undefined) {
+          try {
+            await bounded(current.tracing.stop(), CLEANUP_BUDGET_MS, "trace save timed out");
+          } catch (error) {
+            notes.push(`trace save failed: ${errorMessage(error)}`);
           }
-        } catch (error) {
-          const message = errorMessage(error);
-          if (trace !== undefined) {
-            trace.error = message;
+        } else {
+          const settled = await settleTraceSave({
+            stop: () => current.tracing.stop({ path: trace.path }),
+            path: trace.path,
+            budgetMs: CLEANUP_BUDGET_MS,
+          });
+          trace.saved = settled.saved;
+          if (settled.error !== undefined) {
+            trace.error = settled.error;
+            notes.push(`trace save failed: ${settled.error}`);
           }
-          notes.push(`trace save failed: ${message}`);
         }
       }
       try {

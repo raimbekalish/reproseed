@@ -398,7 +398,7 @@ describe("minimize command", () => {
     }
   });
 
-  it("leaves the report, spec, and existing trace in place when capture fails", async () => {
+  it("preserves an existing trace when capture fails and warns that it may be stale", async () => {
     const token = randomBytes(16).toString("hex");
     const directory = await mkdtemp(join(tmpdir(), "reproseed-trace-fail-"));
     try {
@@ -418,6 +418,12 @@ describe("minimize command", () => {
       });
       assert.equal(failed.code, EXIT.verified, failed.stderr);
       assert.match(failed.stderr, /Trace evidence: failed/);
+      assert.match(failed.stderr, /left unchanged from an earlier run/);
+      assert.match(failed.stderr, /may be stale/);
+      assert.match(failed.stderr, /not verified evidence for this run/);
+      assert.equal(failed.stderr.includes("Trace evidence: verified"), false);
+      assert.equal(failed.stderr.includes("show-trace"), false);
+      assert.equal(failed.stdout.includes("show-trace"), false);
       assert.match(failed.stderr, /\[redacted\]/);
       assert.equal(failed.stderr.includes(token), false);
       assert.equal(failed.stdout.includes(token), false);

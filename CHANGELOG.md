@@ -16,6 +16,7 @@ Work toward 0.2.0. This section is not a release. The package version stays 0.1.
 
 ### Changed
 
+- A failed `reproseed minimize --trace` leaves an existing zip unchanged and says that file may be stale. It is not presented as evidence for the current run. A trace save that passes the 5 second cleanup budget is still waited on, and the temporary zip is removed after that save settles.
 - `reproseed doctor` checks `reset.verify.path` only as a JSON array. For a record-count scenario, `oracle-endpoint` checks `oracle.request.path` for string `id`, `email`, and `note`, and numeric `createdAt`. The paths can differ. An empty oracle array still passes. A DOM-text scenario does not request a record list. The diagnostic names the item and the field and does not print record values.
 - `reproseed doctor` treats each scenario `goto` response as ready only when the status is successful. A connection failure, a redirect, a missing route, and a server error stay distinct. `GET /` is requested only when the scenario has no `goto` step.
 - The opt-in ticket integration test runs one generated spec against the default buggy page, where the count is 2, and against a test-only fixed page, where the count is 1. The fixed page is not the default server and is not in the npm package.

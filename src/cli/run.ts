@@ -1,4 +1,4 @@
-import { unlink } from "node:fs/promises";
+import { lstat, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { cleanStateVerify } from "../core/clean-state.ts";
@@ -18,7 +18,7 @@ import {
   formatTraceEvidence,
   type TraceEvidence,
 } from "../runner/trace-evidence.ts";
-import { CliError, EXIT } from "./errors.ts";
+import { CliError, EXIT, isNodeError } from "./errors.ts";
 import { formatSummary } from "./format.ts";
 import {
   assertCanReplace,
@@ -225,8 +225,7 @@ async function recordTraceEvidence(input: {
       traceSaved: captured.traceSaved,
     });
     if (evidence.status === "failed") {
-      await unlink(temp).catch(() => undefined);
-      input.stderr(formatTraceEvidence(evidenceFromCapture(evidence, captured.traceError), input.tracePath));
+      await reportFailedTrace(temp, input.tracePath, evidenceFromCapture(evidence, captured.traceError).detail, input.stderr);
       return;
     }
     await publishExistingFile(temp, input.tracePath, input.force);
@@ -237,9 +236,29 @@ async function recordTraceEvidence(input: {
       );
     }
   } catch (error) {
-    await unlink(temp).catch(() => undefined);
     const message = error instanceof Error ? error.message : "trace capture failed";
-    input.stderr(formatTraceEvidence({ status: "failed", detail: message }, input.tracePath));
+    await reportFailedTrace(temp, input.tracePath, message, input.stderr);
+  }
+}
+
+async function reportFailedTrace(
+  temp: string,
+  tracePath: string,
+  detail: string,
+  stderr: (text: string) => void,
+): Promise<void> {
+  if (temp !== tracePath) {
+    await unlink(temp).catch(() => undefined);
+  }
+  stderr(formatTraceEvidence({ status: "failed", detail }, tracePath, { priorTraceRemains: await priorTraceRemains(tracePath) }));
+}
+
+async function priorTraceRemains(path: string): Promise<boolean> {
+  try {
+    const info = await lstat(path);
+    return info.isFile();
+  } catch (error) {
+    return !isNodeError(error, "ENOENT");
   }
 }
 

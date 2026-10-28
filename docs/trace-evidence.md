@@ -37,11 +37,17 @@ ReproSeed compares the extra replay with the verified failure signature:
 | --- | --- |
 | `verified` | The extra replay failed with the same target signature, and the zip was saved. |
 | `not-reproduced` | The extra replay finished with a pass or a different failure. The zip is saved and is not verified evidence. |
-| `failed` | The replay or the trace save failed. The requested zip is not written. |
+| `failed` | The replay or the trace save failed. A new zip is not published. An older zip at that path is left in place and reported as stale. |
 
-Only `verified` is a matching reproduction of the minimized bug. The command keeps the minimization exit code either way. When the trace is missing or is not a match, it writes a warning. It does not rewrite the report or the spec that the verified run already published.
+Only `verified` is a matching reproduction of the minimized bug. The command keeps the minimization exit code either way. When the trace is missing or is not a match, it writes a warning. It does not rewrite the report or the spec that the verified run already published. A failed capture does not include an instruction to open the zip. If a zip was already at the requested path, the warning says that file was left unchanged, may be stale, and is not verified evidence for this run.
 
 `verified-one-minimal` is still 1-minimal under single deletion. A trace does not prove a globally shortest reproduction, and it does not promise that capture will succeed on every run.
+
+## Save and cleanup
+
+Playwright's `tracing.stop` writes the zip and accepts no cancellation signal. ReproSeed waits for that call before it closes the browser context. The cleanup budget is 5 seconds. If the save is still running at that point, the capture is failed. ReproSeed still waits for the same call to finish, then deletes the temporary zip, including a file written after the deadline. The command does not finish while that save is still running, and it does not report the save as cleaned up before then.
+
+If `tracing.stop` never settles, the process keeps waiting. ReproSeed cannot abort the write. Killing the process can leave Playwright's own temporary trace files outside `artifacts/`. Those files are not the zip path you passed to `--trace`.
 
 ## Open the trace
 

@@ -26,6 +26,8 @@ Reports and command output replace a copy of that credential, when it is at leas
 
 A Playwright trace can still contain DOM text, typed input, screenshots, and network requests and responses from the page. If the application shows or echoes the credential, that value can appear in the zip. Traces are not redacted. `*.zip` and `artifacts/` are gitignored. Do not commit a trace, upload it, attach it to GitHub Actions, or send it to an external service until you have reviewed it. The package does not include trace files.
 
+A failed capture does not replace an existing zip. The command says that older file may be stale and does not treat it as evidence for the current run. A trace save that misses the cleanup budget is still waited on, and the temporary zip is deleted after that Playwright call settles. Killing the process during the save can leave Playwright's own temporary trace files outside `artifacts/`.
+
 ## Redirects
 
 Identity, reset, and clean-state requests are made with redirect following disabled. A redirect response fails the check. Browser navigation that would leave the authorized origin is refused, including a redirect during the initial page load. The generated Playwright spec uses the same restrictions and refuses a non-loopback origin before it sends the credential.

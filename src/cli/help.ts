@@ -169,6 +169,9 @@ Exit codes:
 A trace request does not change these codes. When the extra replay misses the
 failure, or the zip cannot be saved, the command keeps the minimization exit
 code and writes a warning. The report and spec from that run stay in place.
+If capture fails and a zip is already at the trace path, that file is left
+unchanged. The warning says it is from an earlier run and may be stale. It is
+not evidence for this run, and the command does not tell you to open it.
 
 The regression test asserts the scenario's intended result.
 A record-count oracle asserts the intended record count.
