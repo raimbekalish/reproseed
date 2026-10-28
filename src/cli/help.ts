@@ -76,11 +76,13 @@ Checks:
   target-identity     GET /__reproseed/identity returns the configured app id
   chromium            Playwright's downloaded Chromium revision is installed
   clean-state-endpoint
-                      The configured GET returns a JSON array. This is the current
-                      response, not proof that reset leaves it empty. A record-count
-                      scenario also requires each item to have string id, email,
-                      and note, and numeric createdAt. Doctor does not print those
-                      values. A dom-text scenario does not use that item shape.
+                      reset.verify.path returns a JSON array. Item shape is not
+                      checked. This is the current response, not proof that reset
+                      leaves it empty.
+  oracle-endpoint     For record-count, oracle.request.path returns records with
+                      string id, email, and note, and numeric createdAt. An empty
+                      array passes. Doctor does not print record values. The two
+                      paths can differ. A dom-text oracle does not use a record list.
   reset-accepted      Not verified. Doctor does not ask the application to accept the credential.
   clean-state-after-reset
                       Not verified. Emptiness after reset requires a real reset.

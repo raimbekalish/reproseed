@@ -9,7 +9,7 @@ import { startOptInServer } from "../examples/opt-in-ticket/server.ts";
 import { collectDoctorChecks, doctorExitCode, formatDoctorReport } from "../src/cli/doctor.ts";
 import { EXIT } from "../src/cli/errors.ts";
 import { loadScenarioFile } from "../src/cli/scenario-file.ts";
-import type { FetchLike } from "../src/runner/reset.ts";
+import { isListedRecord, readRecordList, resetAndConfirmEmpty, type FetchLike } from "../src/runner/reset.ts";
 
 const SCENARIO = fileURLToPath(new URL("../examples/opt-in-ticket/scenario.json", import.meta.url));
 const SERVER = fileURLToPath(new URL("../examples/opt-in-ticket/server.ts", import.meta.url));
@@ -61,6 +61,7 @@ describe("opt-in ticket example", () => {
       });
       assert.equal(right.status, 204);
       assert.equal((await tickets(server.origin)).length, 0);
+      assert.deepEqual(server.audits(), []);
       const scenario = await loadScenarioFile(SCENARIO, fileURLToPath(new URL("..", import.meta.url)), {
         REPROSEED_ORIGIN: server.origin,
         REPROSEED_APP_ID: APP_ID,
@@ -68,6 +69,38 @@ describe("opt-in ticket example", () => {
       });
       assert.equal(scenario.reset.verify?.path, "/api/tickets");
       assert.equal(scenario.oracle.id, "record-count");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps reset history and ticket records on different endpoints", async () => {
+    const token = randomBytes(16).toString("hex");
+    const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
+    try {
+      await postTicket(server.origin, "person@example.com");
+      const history = server.audits();
+      assert.equal(history.length, 1);
+      assert.equal(isListedRecord(history[0]), false);
+      const records = await readRecordList({ origin: server.origin, path: "/api/tickets" });
+      assert.equal(records.length, 1);
+      assert.equal(isListedRecord(records[0]), true);
+      const paths: string[] = [];
+      await resetAndConfirmEmpty({
+        origin: server.origin,
+        expectedAppId: APP_ID,
+        resetAuthorization: token,
+        verify: { kind: "json-array-empty", method: "GET", path: "/api/reset-history" },
+        fetchImpl: async (input, init) => {
+          const url = input instanceof URL ? input : new URL(String(input));
+          paths.push(url.pathname);
+          return fetch(input, init);
+        },
+      });
+      assert.deepEqual(paths, ["/__reproseed/identity", "/__reproseed/reset", "/api/reset-history"]);
+      assert.equal((await readRecordList({ origin: server.origin, path: "/api/tickets" })).length, 0);
+      assert.deepEqual(server.audits(), []);
+      assert.equal(JSON.stringify(server.requests()).includes(token), false);
     } finally {
       await server.close();
     }

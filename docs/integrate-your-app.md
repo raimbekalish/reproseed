@@ -116,7 +116,9 @@ A line starts with `pass`, `fail`, `skipped`, or `not-verified`. These two are n
 
 `target-available` requests each distinct `goto` path. A response from 200 through 299 passes. A connection failure, a redirect, a missing route, and a server error are separate failures. A 500 is a reachable server, not a ready page. Doctor does not require `GET /` when the scenario navigates somewhere else. When the scenario has no `goto` step, the request is `GET /`.
 
-`clean-state-endpoint` says the GET returned a JSON array. An empty array passes. A non-empty array can still pass, and `minimize` resets first and then requires the array to be empty. For a `record-count` scenario, each non-empty item must have string `id`, `email`, and `note`, and numeric `createdAt`. That is the same shape `minimize` reads. A missing field and a wrong type are reported by item index and field name. The values are not printed. A `dom-text` scenario only needs the JSON array. Its items do not have to be records.
+`clean-state-endpoint` reads `reset.verify.path`. It passes when that GET returns a JSON array. The items can be audit events or any other JSON values. An empty array passes. A non-empty array can still pass. `minimize` resets first and then requires that array to be empty. Doctor does not check item shape here.
+
+`oracle-endpoint` is a separate check. For `record-count`, it reads `oracle.request.path`. A non-empty array must contain records with string `id`, `email`, and `note`, and numeric `createdAt`, which is the shape `minimize` counts. An empty array passes. A missing field and a wrong type are reported by item index and field name. The values are not printed. The two paths can differ. When they are the same path, doctor sends that GET once. A `dom-text` scenario does not have a record-list oracle, so that check does not request one.
 
 Exit 0 means every required check passed. Exit 1 means usage was invalid or a required check failed or was skipped. Exit 4 is an unexpected failure. `doctor` does not use the minimize exit codes 2 and 3.
 
@@ -180,8 +182,8 @@ Expect Playwright exit 1, `Expected: 1`, and `Received: 2` while the default pag
 | `non-loopback` | Use `http://127.0.0.1`, `http://localhost`, or `http://[::1]`. HTTPS and other hosts are refused before any request. |
 | Could not connect | Start the application and set `REPROSEED_ORIGIN` to the URL it printed, including the port. This is a network failure. A 404 or a 500 means the server did respond. |
 | `navigation path is missing` or `server failure` | The scenario `goto` path did not return a successful status. Doctor does not call that page ready. Fix the route the scenario opens. A server error is not proof that the process is up and healthy. |
-| `record-count check cannot read` | Each array item needs string `id`, `email`, and `note`, and numeric `createdAt`. The message names the item index and the field. It does not print the values. A `dom-text` scenario does not use this shape. |
-| Clean-state GET is not a JSON array | `reset.verify.path` has to be a same-origin GET that returns an array. |
+| `record-count oracle cannot read` | `oracle.request.path` needs string `id`, `email`, and `note`, and numeric `createdAt` on each item. The message names the item index and the field. It does not print the values. This is not the reset verification list. A `dom-text` scenario does not use this shape. |
+| Clean-state GET is not a JSON array | `reset.verify.path` has to be a same-origin GET that returns an array. The items do not have to be records. |
 | `reset-accepted` is `not-verified` | That is expected. Only `minimize` sends the reset. If minimize then says reset failed, the header or the credential does not match. |
 | `refusing to overwrite` | Pass `--force` to replace a report, spec, or `init` file. `--force` still does not replace a spec when minimization did not verify. |
 | `no-reproducible-failure` | The full scenario did not reproduce one target failure. For this example, the second click has to land during the delayed response: keep the 2000ms delay and the 800ms gap, and do not raise the page's 400ms guard above that gap. |

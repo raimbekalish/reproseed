@@ -30,11 +30,18 @@ export type OptInServerOptions = {
   page?: OptInPage;
 };
 
+export type ResetAudit = {
+  action: string;
+  at: number;
+};
+
 export type OptInServer = {
   origin: string;
   appId: string | undefined;
   resetEnabled: boolean;
   tickets: () => Ticket[];
+  audits: () => ResetAudit[];
+  requests: () => string[];
   postCount: () => number;
   close: () => Promise<void>;
 };
@@ -54,6 +61,8 @@ export async function startOptInServer(options: OptInServerOptions = {}): Promis
   const page = requirePage(options.page);
   const state: AppState = {
     tickets: [],
+    audits: [],
+    requests: [],
     appId,
     resetAuthorization,
     posts: 0,
@@ -90,6 +99,8 @@ export async function startOptInServer(options: OptInServerOptions = {}): Promis
         appId,
         resetEnabled: appId !== undefined && resetAuthorization !== undefined,
         tickets: () => state.tickets.map((ticket) => ({ ...ticket })),
+        audits: () => state.audits.map((audit) => ({ ...audit })),
+        requests: () => [...state.requests],
         postCount: () => state.posts,
         close: () => closeServer(server),
       });
@@ -134,6 +145,8 @@ function blankToUndefined(value: string | undefined): string | undefined {
 
 type AppState = {
   tickets: Ticket[];
+  audits: ResetAudit[];
+  requests: string[];
   appId: string | undefined;
   resetAuthorization: string | undefined;
   posts: number;
@@ -143,12 +156,17 @@ type AppState = {
 async function handleRequest(request: IncomingMessage, response: ServerResponse, state: AppState): Promise<void> {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   const method = request.method ?? "GET";
+  state.requests.push(`${method} ${url.pathname}`);
   if (method === "GET" && url.pathname === "/") {
     sendHtml(response, state.pageHtml);
     return;
   }
   if (method === "GET" && url.pathname === "/api/tickets") {
     sendJson(response, 200, state.tickets);
+    return;
+  }
+  if (method === "GET" && url.pathname === "/api/reset-history") {
+    sendJson(response, 200, state.audits);
     return;
   }
   if (method === "POST" && url.pathname === "/api/tickets") {
@@ -188,6 +206,7 @@ async function createTicket(request: IncomingMessage, response: ServerResponse, 
     createdAt: Date.now(),
   };
   state.tickets.push(stored);
+  state.audits.push({ action: "filed", at: stored.createdAt });
   state.posts += 1;
   sendJson(response, 201, stored);
 }
@@ -206,6 +225,7 @@ function resetTickets(request: IncomingMessage, response: ServerResponse, state:
     return;
   }
   state.tickets.splice(0, state.tickets.length);
+  state.audits.splice(0, state.audits.length);
   response.writeHead(204, { "cache-control": "no-store" });
   response.end();
 }

@@ -22,6 +22,7 @@ export const DOCTOR_CHECK_IDS = [
   "target-identity",
   "chromium",
   "clean-state-endpoint",
+  "oracle-endpoint",
   "reset-accepted",
   "clean-state-after-reset",
 ] as const;
@@ -35,6 +36,7 @@ export const DOCTOR_PASS_REQUIRED = [
   "target-identity",
   "chromium",
   "clean-state-endpoint",
+  "oracle-endpoint",
 ] as const;
 
 export type DoctorCheckId = (typeof DOCTOR_CHECK_IDS)[number];
@@ -98,6 +100,7 @@ export async function collectDoctorChecks(input: DoctorCommand): Promise<DoctorC
     network.identity,
     chromium,
     network.cleanState,
+    network.oracle,
     credential
       ? check(
           "reset-accepted",
@@ -303,6 +306,7 @@ type NetworkChecks = {
   available: DoctorCheck;
   identity: DoctorCheck;
   cleanState: DoctorCheck;
+  oracle: DoctorCheck;
 };
 
 function skippedNetwork(reason: string): NetworkChecks {
@@ -310,6 +314,7 @@ function skippedNetwork(reason: string): NetworkChecks {
     available: check("target-available", "skipped", reason),
     identity: check("target-identity", "skipped", reason),
     cleanState: check("clean-state-endpoint", "skipped", reason),
+    oracle: check("oracle-endpoint", "skipped", reason),
   };
 }
 
@@ -330,11 +335,14 @@ async function probeTarget(input: {
       available: check("target-available", "fail", readiness.detail),
       identity: check("target-identity", "skipped", reason),
       cleanState: check("clean-state-endpoint", "skipped", reason),
+      oracle: check("oracle-endpoint", "skipped", reason),
     };
   }
+  const responses = new Map<string, ProbeGet>();
   const identity = await probeIdentity(input);
-  const cleanState = await probeCleanState(input);
-  return { available: readiness.check, identity, cleanState };
+  const cleanState = await probeCleanState(input, responses);
+  const oracle = await probeOracle(input, responses);
+  return { available: readiness.check, identity, cleanState, oracle };
 }
 
 function navigationPaths(steps: readonly Step[]): { paths: string[]; fallback: boolean } {
@@ -438,20 +446,16 @@ async function probeIdentity(input: { origin: string; appId: string; fetchImpl: 
   return check("target-identity", "pass", `GET /__reproseed/identity returned ${showId(appId)}.`);
 }
 
-async function probeCleanState(input: {
-  origin: string;
-  oracle: Oracle;
-  verifyPath: string;
-  verifyIsDefault: boolean;
-  fetchImpl: FetchLike;
-}): Promise<DoctorCheck> {
-  let url: URL;
-  try {
-    url = resolveAuthorizedUrl(input.origin, input.verifyPath);
-  } catch (error) {
-    return check("clean-state-endpoint", "fail", cliMessage(error));
-  }
-  const result = await probeGet(input.fetchImpl, input.origin, `${url.pathname}${url.search}`);
+async function probeCleanState(
+  input: {
+    origin: string;
+    verifyPath: string;
+    verifyIsDefault: boolean;
+    fetchImpl: FetchLike;
+  },
+  responses: Map<string, ProbeGet>,
+): Promise<DoctorCheck> {
+  const result = await loadGet(input.fetchImpl, input.origin, input.verifyPath, responses);
   if (result.kind === "network" || result.kind === "refused") {
     return check("clean-state-endpoint", "fail", result.detail);
   }
@@ -467,25 +471,100 @@ async function probeCleanState(input: {
   if (!Array.isArray(result.body)) {
     return check("clean-state-endpoint", "fail", `GET ${input.verifyPath} did not return a JSON array.`);
   }
-  if (input.oracle.id === "record-count" && result.body.length > 0) {
-    const problems = recordShapeProblems(result.body);
-    if (problems.length > 0) {
-      return check(
-        "clean-state-endpoint",
-        "fail",
-        `GET ${input.verifyPath} returned a JSON array that the record-count check cannot read. ${formatRecordShapeProblems(problems)} Each item needs string id, email, and note, and numeric createdAt. Record values are not printed.`,
-      );
-    }
-  }
   const suffix = input.verifyIsDefault ? " reset.verify is omitted, so this is the default clean-state path." : "";
-  const shape =
-    input.oracle.id === "record-count" && result.body.length > 0 ? " Each item matches the record-count shape." : "";
   const noun = result.body.length === 1 ? "item" : "items";
   return check(
     "clean-state-endpoint",
     "pass",
-    `GET ${input.verifyPath} returned a JSON array with ${result.body.length} ${noun}.${shape}${suffix}`,
+    `GET ${input.verifyPath} returned a JSON array with ${result.body.length} ${noun}. Reset verification accepts any JSON array items.${suffix}`,
   );
+}
+
+async function probeOracle(
+  input: {
+    origin: string;
+    oracle: Oracle;
+    verifyPath: string;
+    fetchImpl: FetchLike;
+  },
+  responses: Map<string, ProbeGet>,
+): Promise<DoctorCheck> {
+  if (input.oracle.id !== "record-count") {
+    return check(
+      "oracle-endpoint",
+      "pass",
+      "The dom-text oracle reads element text. Doctor did not request a record list.",
+    );
+  }
+  const oraclePath = input.oracle.request.path;
+  const samePath = sameAuthorizedPath(input.origin, input.verifyPath, oraclePath);
+  const result = await loadGet(input.fetchImpl, input.origin, oraclePath, responses);
+  const shared = samePath ? " This is the same GET as reset verification." : " This is the record-count oracle, not reset verification.";
+  if (result.kind === "network" || result.kind === "refused") {
+    return check("oracle-endpoint", "fail", `${result.detail}${shared}`);
+  }
+  if (result.kind === "redirect") {
+    return check("oracle-endpoint", "fail", `GET ${oraclePath} was a redirect. Doctor did not follow it.${shared}`);
+  }
+  if (result.status < 200 || result.status >= 300) {
+    return check("oracle-endpoint", "fail", `GET ${oraclePath} failed (${result.status}).${shared}`);
+  }
+  if (result.bodyError !== undefined) {
+    return check("oracle-endpoint", "fail", `GET ${oraclePath} ${result.bodyError}.${shared}`);
+  }
+  if (!Array.isArray(result.body)) {
+    return check("oracle-endpoint", "fail", `GET ${oraclePath} did not return a JSON array.${shared}`);
+  }
+  if (result.body.length > 0) {
+    const problems = recordShapeProblems(result.body);
+    if (problems.length > 0) {
+      return check(
+        "oracle-endpoint",
+        "fail",
+        `GET ${oraclePath} returned a JSON array that the record-count oracle cannot read. ${formatRecordShapeProblems(problems)} Each item needs string id, email, and note, and numeric createdAt. Record values are not printed.${shared}`,
+      );
+    }
+  }
+  const noun = result.body.length === 1 ? "item" : "items";
+  const shape =
+    result.body.length > 0 ? " Each item matches the record-count shape." : " The record-count oracle accepts an empty list.";
+  return check(
+    "oracle-endpoint",
+    "pass",
+    `GET ${oraclePath} returned a JSON array with ${result.body.length} ${noun}.${shape}${shared}`,
+  );
+}
+
+function sameAuthorizedPath(origin: string, left: string, right: string): boolean {
+  try {
+    const first = resolveAuthorizedUrl(origin, left);
+    const second = resolveAuthorizedUrl(origin, right);
+    return `${first.pathname}${first.search}` === `${second.pathname}${second.search}`;
+  } catch {
+    return left === right;
+  }
+}
+
+async function loadGet(
+  fetchImpl: FetchLike,
+  origin: string,
+  path: string,
+  responses: Map<string, ProbeGet>,
+): Promise<ProbeGet> {
+  let key: string;
+  try {
+    const url = resolveAuthorizedUrl(origin, path);
+    key = `${url.pathname}${url.search}`;
+  } catch (error) {
+    return { kind: "refused", detail: cliMessage(error) };
+  }
+  const cached = responses.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const result = await probeGet(fetchImpl, origin, key);
+  responses.set(key, result);
+  return result;
 }
 
 type ProbeGet =

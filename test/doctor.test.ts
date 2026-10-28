@@ -80,6 +80,7 @@ describe("doctor checks", () => {
       assert.equal(status(checks, "loopback-origin"), "fail");
       assert.match(detail(checks, "loopback-origin"), /non-loopback/);
       assert.match(detail(checks, "target-available"), /did not contact/);
+      assert.equal(status(checks, "oracle-endpoint"), "skipped");
       assert.equal(doctorExitCode(checks), EXIT.usage);
       assert.equal(formatDoctorReport(checks).includes(TOKEN), false);
     } finally {
@@ -105,6 +106,8 @@ describe("doctor checks", () => {
       assert.equal(status(down, "target-available"), "fail");
       assert.match(detail(down, "target-available"), /Could not connect/);
       assert.equal(status(down, "target-identity"), "skipped");
+      assert.equal(status(down, "clean-state-endpoint"), "skipped");
+      assert.equal(status(down, "oracle-endpoint"), "skipped");
       assert.equal(status(down, "reset-accepted"), "not-verified");
       assert.equal(doctorExitCode(down), EXIT.usage);
 
@@ -129,6 +132,8 @@ describe("doctor checks", () => {
       assert.equal(status(mismatch, "clean-state-endpoint"), "pass");
       assert.match(detail(mismatch, "clean-state-endpoint"), /1 item/);
       assert.doesNotMatch(detail(mismatch, "clean-state-endpoint"), /record-count shape|cannot read/);
+      assert.equal(status(mismatch, "oracle-endpoint"), "pass");
+      assert.match(detail(mismatch, "oracle-endpoint"), /did not request a record list/);
       assert.equal(status(mismatch, "chromium"), "fail");
       assert.match(detail(mismatch, "chromium"), /did not launch a browser/);
       assert.equal(mismatchCalls.some((call) => call.method === "POST"), false);
@@ -173,8 +178,12 @@ describe("doctor checks", () => {
   it("accepts an empty record list and a valid non-empty list without printing values", async () => {
     const empty = await diagnose(starterScenario("record-count"), readyRoutes("/api/items", []));
     assert.equal(status(empty.checks, "clean-state-endpoint"), "pass");
+    assert.equal(status(empty.checks, "oracle-endpoint"), "pass");
     assert.match(detail(empty.checks, "clean-state-endpoint"), /JSON array with 0 items/);
+    assert.match(detail(empty.checks, "oracle-endpoint"), /JSON array with 0 items/);
+    assert.match(detail(empty.checks, "oracle-endpoint"), /accepts an empty list/);
     assert.doesNotMatch(detail(empty.checks, "clean-state-endpoint"), /record-count shape|cannot read/);
+    assert.equal(empty.calls.filter((path) => path === "/api/items").length, 1);
     assert.equal(empty.report.includes(TOKEN), false);
 
     const listed = await diagnose(
@@ -182,19 +191,26 @@ describe("doctor checks", () => {
       readyRoutes("/api/items", [{ id: TOKEN, email: TOKEN, note: TOKEN, createdAt: 1, secret: TOKEN }]),
     );
     assert.equal(status(listed.checks, "clean-state-endpoint"), "pass");
+    assert.equal(status(listed.checks, "oracle-endpoint"), "pass");
     assert.match(detail(listed.checks, "clean-state-endpoint"), /JSON array with 1 item/);
-    assert.match(detail(listed.checks, "clean-state-endpoint"), /record-count shape/);
+    assert.doesNotMatch(detail(listed.checks, "clean-state-endpoint"), /record-count shape|cannot read/);
+    assert.match(detail(listed.checks, "oracle-endpoint"), /record-count shape/);
+    assert.match(detail(listed.checks, "oracle-endpoint"), /same GET as reset verification/);
     assert.equal(listed.report.includes(TOKEN), false);
     assert.deepEqual(listed.calls, ["/", "/__reproseed/identity", "/api/items"]);
     assert.deepEqual(listed.methods, ["GET", "GET", "GET"]);
+    assert.equal(listed.redirects.every((redirect) => redirect === "error"), true);
     assert.equal(listed.calls.some((path) => path.includes("/__reproseed/reset")), false);
   });
 
-  it("rejects missing fields, wrong types, and a mix of valid and invalid records", async () => {
+  it("rejects malformed oracle records without failing reset verification", async () => {
     const missing = await diagnose(starterScenario("record-count"), readyRoutes("/api/items", [{ id: TOKEN }]));
-    assert.equal(status(missing.checks, "clean-state-endpoint"), "fail");
-    assert.match(detail(missing.checks, "clean-state-endpoint"), /item 0: missing email, note, createdAt/);
-    assert.match(detail(missing.checks, "clean-state-endpoint"), /Record values are not printed/);
+    assert.equal(status(missing.checks, "clean-state-endpoint"), "pass");
+    assert.doesNotMatch(detail(missing.checks, "clean-state-endpoint"), /cannot read|missing email/);
+    assert.equal(status(missing.checks, "oracle-endpoint"), "fail");
+    assert.match(detail(missing.checks, "oracle-endpoint"), /record-count oracle cannot read/);
+    assert.match(detail(missing.checks, "oracle-endpoint"), /item 0: missing email, note, createdAt/);
+    assert.match(detail(missing.checks, "oracle-endpoint"), /Record values are not printed/);
     assert.equal(missing.report.includes(TOKEN), false);
     assert.equal(doctorExitCode(missing.checks), EXIT.usage);
 
@@ -202,8 +218,9 @@ describe("doctor checks", () => {
       starterScenario("record-count"),
       readyRoutes("/api/items", [{ id: 1, email: false, note: null, createdAt: TOKEN }]),
     );
-    assert.equal(status(wrong.checks, "clean-state-endpoint"), "fail");
-    assert.match(detail(wrong.checks, "clean-state-endpoint"), /item 0: wrong type for id, email, note, createdAt/);
+    assert.equal(status(wrong.checks, "clean-state-endpoint"), "pass");
+    assert.equal(status(wrong.checks, "oracle-endpoint"), "fail");
+    assert.match(detail(wrong.checks, "oracle-endpoint"), /item 0: wrong type for id, email, note, createdAt/);
     assert.equal(wrong.report.includes(TOKEN), false);
 
     const mixed = await diagnose(
@@ -214,12 +231,59 @@ describe("doctor checks", () => {
         { note: 1 },
       ]),
     );
-    assert.equal(status(mixed.checks, "clean-state-endpoint"), "fail");
-    assert.match(detail(mixed.checks, "clean-state-endpoint"), /item 1 is not a record object/);
-    assert.match(detail(mixed.checks, "clean-state-endpoint"), /item 2: missing id, email, createdAt; wrong type for note/);
-    assert.doesNotMatch(detail(mixed.checks, "clean-state-endpoint"), /item 0/);
+    assert.equal(status(mixed.checks, "clean-state-endpoint"), "pass");
+    assert.equal(status(mixed.checks, "oracle-endpoint"), "fail");
+    assert.match(detail(mixed.checks, "oracle-endpoint"), /item 1 is not a record object/);
+    assert.match(detail(mixed.checks, "oracle-endpoint"), /item 2: missing id, email, createdAt; wrong type for note/);
+    assert.doesNotMatch(detail(mixed.checks, "oracle-endpoint"), /item 0/);
     assert.equal(mixed.report.includes(TOKEN), false);
     assert.equal(mixed.report.includes("not-a-record"), false);
+    assert.equal(mixed.methods.every((method) => method === "GET"), true);
+  });
+
+  it("accepts non-record reset history and checks a separate oracle list", async () => {
+    const body = starterScenario("record-count") as {
+      reset: { verify: { path: string } };
+      oracle: { request: { path: string } };
+    };
+    body.reset.verify.path = "/api/reset-history";
+    body.oracle.request.path = "/api/tickets";
+    const accepted = await diagnose(body, {
+      "/": () => new Response("<html></html>", { status: 200 }),
+      "/__reproseed/identity": () => json(200, { appId: "replace-with-your-app-id" }),
+      "/api/reset-history": () => json(200, [{ event: TOKEN, at: 1 }]),
+      "/api/tickets": () => json(200, [{ id: "rec-1", email: "a@example.com", note: "n", createdAt: 1 }]),
+    });
+    assert.equal(status(accepted.checks, "clean-state-endpoint"), "pass");
+    assert.match(detail(accepted.checks, "clean-state-endpoint"), /GET \/api\/reset-history/);
+    assert.match(detail(accepted.checks, "clean-state-endpoint"), /any JSON array items/);
+    assert.doesNotMatch(detail(accepted.checks, "clean-state-endpoint"), /cannot read|record-count shape/);
+    assert.equal(status(accepted.checks, "oracle-endpoint"), "pass");
+    assert.match(detail(accepted.checks, "oracle-endpoint"), /GET \/api\/tickets/);
+    assert.match(detail(accepted.checks, "oracle-endpoint"), /record-count shape/);
+    assert.match(detail(accepted.checks, "oracle-endpoint"), /not reset verification/);
+    assert.equal(doctorExitCode(accepted.checks), EXIT.verified);
+    assert.equal(accepted.report.includes(TOKEN), false);
+    assert.deepEqual(accepted.calls, ["/", "/__reproseed/identity", "/api/reset-history", "/api/tickets"]);
+    assert.deepEqual(accepted.methods, ["GET", "GET", "GET", "GET"]);
+    assert.equal(accepted.redirects.every((redirect) => redirect === "error"), true);
+
+    const malformed = await diagnose(body, {
+      "/": () => new Response("<html></html>", { status: 200 }),
+      "/__reproseed/identity": () => json(200, { appId: "replace-with-your-app-id" }),
+      "/api/reset-history": () => json(200, [{ event: "kept", at: 1 }]),
+      "/api/tickets": () => json(200, [{ id: TOKEN }]),
+    });
+    assert.equal(status(malformed.checks, "clean-state-endpoint"), "pass");
+    assert.match(detail(malformed.checks, "clean-state-endpoint"), /GET \/api\/reset-history/);
+    assert.doesNotMatch(detail(malformed.checks, "clean-state-endpoint"), /cannot read|missing email/);
+    assert.equal(status(malformed.checks, "oracle-endpoint"), "fail");
+    assert.match(detail(malformed.checks, "oracle-endpoint"), /GET \/api\/tickets/);
+    assert.match(detail(malformed.checks, "oracle-endpoint"), /item 0: missing email, note, createdAt/);
+    assert.doesNotMatch(detail(malformed.checks, "oracle-endpoint"), /reset-history/);
+    assert.equal(malformed.report.includes(TOKEN), false);
+    assert.equal(doctorExitCode(malformed.checks), EXIT.usage);
+    assert.equal(malformed.methods.some((method) => method === "POST"), false);
   });
 
   it("does not apply the record shape to a dom-text array", async () => {
@@ -227,6 +291,9 @@ describe("doctor checks", () => {
     assert.equal(status(checked.checks, "clean-state-endpoint"), "pass");
     assert.match(detail(checked.checks, "clean-state-endpoint"), /JSON array with 1 item/);
     assert.doesNotMatch(detail(checked.checks, "clean-state-endpoint"), /record-count shape|cannot read|missing /);
+    assert.equal(status(checked.checks, "oracle-endpoint"), "pass");
+    assert.match(detail(checked.checks, "oracle-endpoint"), /did not request a record list/);
+    assert.deepEqual(checked.calls, ["/", "/__reproseed/identity", "/api/events"]);
     assert.equal(checked.report.includes(TOKEN), false);
   });
 
@@ -356,7 +423,7 @@ function readyChromium(): { ready: true; detail: string } {
 async function diagnose(
   body: unknown,
   routes: Record<string, () => Response>,
-): Promise<{ checks: DoctorCheck[]; calls: string[]; methods: string[]; report: string }> {
+): Promise<{ checks: DoctorCheck[]; calls: string[]; methods: string[]; redirects: Array<string | undefined>; report: string }> {
   const directory = await mkdtemp(join(tmpdir(), "reproseed-doctor-case-"));
   const calls: Array<{ method: string; url: string; redirect: string | undefined }> = [];
   try {
@@ -374,6 +441,7 @@ async function diagnose(
       checks,
       calls: calls.map((call) => new URL(call.url).pathname),
       methods: calls.map((call) => call.method),
+      redirects: calls.map((call) => call.redirect),
       report: formatDoctorReport(checks),
     };
   } finally {
