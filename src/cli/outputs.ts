@@ -6,6 +6,7 @@ import { CliError, EXIT, isNodeError } from "./errors.ts";
 const EXTENSION = {
   report: ".json",
   spec: ".ts",
+  scenario: ".json",
 } as const;
 
 export async function resolveOutputPath(

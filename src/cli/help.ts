@@ -1,4 +1,3 @@
-import { EXIT } from "./errors.ts";
 import {
   DEFAULT_TIMING_MAX_COARSE,
   DEFAULT_TIMING_MAX_FINE,
@@ -6,21 +5,89 @@ import {
   DEFAULT_TIMING_MAX_WALL_CLOCK_MS,
   DEFAULT_TIMING_RESOLUTION_MS,
 } from "../core/duration.ts";
+import { EXIT } from "./errors.ts";
+import { STARTER_ORIGIN } from "./starter.ts";
 
-export const ROOT_HELP = `ReproSeed minimizes a failing scenario and writes a Playwright regression test.
+export const ROOT_HELP = `ReproSeed checks a local scenario and, when you ask, minimizes a failing one.
 
-It resets only an explicitly authorized loopback test application.
-It does not target production websites.
+It resets only an explicitly authorized loopback test application, and only during minimize.
+doctor does not reset. It does not target production websites.
 
 Usage:
   reproseed --help
   reproseed --version
+  reproseed init [scenario.json] [--oracle record-count|dom-text] [--force]
+  reproseed doctor <scenario.json>
   reproseed minimize <scenario.json> [--report <file>] [--spec <file>] [--force] [--tune-delays]
 
 Commands:
+  init        Write a starter scenario for a loopback application
+  doctor      Check a scenario without resetting the target
   minimize    Run Chromium minimization against a local scenario file
 
-Run \`reproseed minimize --help\` for environment variables, outputs, and exit codes.
+Run \`reproseed <command> --help\` for that command.
+`;
+
+export const INIT_HELP = `Usage:
+  reproseed init [scenario.json] [--oracle record-count|dom-text] [--force]
+
+Arguments:
+  scenario.json       File to create (default: scenario.json)
+
+Options:
+  --oracle <kind>     record-count (default) or dom-text
+  --force             Replace an existing scenario file
+  --help              Show this help
+
+The file matches the scenario schema. It uses ${STARTER_ORIGIN} as a sample origin.
+It does not contain a reset credential, and it does not use a production URL.
+Replace the printed placeholders, including target.appId, selectors, and reset.verify.path.
+
+The application has to opt in by serving GET /__reproseed/identity and POST /__reproseed/reset.
+This command does not start an application and does not add those endpoints.
+
+Output paths stay inside the current directory. Symlinked output paths are refused.
+Existing files are left unchanged unless --force is set.
+
+Exit codes:
+  ${EXIT.verified}  The starter scenario was written.
+  ${EXIT.usage}  Invalid usage or output path, including a refusal to overwrite.
+  ${EXIT.internal}  The file could not be written.
+`;
+
+export const DOCTOR_HELP = `Usage:
+  reproseed doctor <scenario.json>
+
+Arguments:
+  scenario.json       Scenario file. It must not contain resetAuthorization.
+
+Doctor does not send POST /__reproseed/reset and does not launch a browser.
+It does not follow redirects. It does not contact an origin that is not authorized loopback http.
+
+Checks:
+  scenario-file       The file is readable JSON
+  scenario-schema     The scenario matches the supported schema
+  environment         REPROSEED_ORIGIN, REPROSEED_APP_ID, and REPROSEED_RESET_AUTHORIZATION
+  loopback-origin     The origin is http on 127.0.0.1, localhost, or ::1
+  target-available    The loopback application accepts a GET /
+  target-identity     GET /__reproseed/identity returns the configured app id
+  chromium            Playwright's downloaded Chromium revision is installed
+  clean-state-endpoint
+                      The configured GET returns a JSON array. This is the current
+                      response, not proof that reset leaves it empty.
+  reset-accepted      Not verified. Doctor does not ask the application to accept the credential.
+  clean-state-after-reset
+                      Not verified. Emptiness after reset requires a real reset.
+
+The reset credential is not printed. A passing run can still be followed by a failed
+minimize when the application rejects the credential or the list is not empty after reset.
+
+Exit codes:
+  ${EXIT.verified}  Every required check passed. Reset acceptance was not verified.
+  ${EXIT.usage}  Invalid usage, or a required check failed or was skipped.
+  ${EXIT.internal}  The diagnostic command failed unexpectedly.
+
+${EXIT.unstable} and ${EXIT.budget} are minimize results. doctor does not use them.
 `;
 
 export const MINIMIZE_HELP = `Usage:
@@ -48,6 +115,8 @@ Options:
                       (default: ${DEFAULT_TIMING_MAX_WALL_CLOCK_MS}). Requires --tune-delays.
                       This budget is separate from the scenario's maxWallClockMs.
   --help              Show this help
+
+This command resets the target before minimization. Use \`reproseed doctor\` to inspect a scenario without resetting it.
 
 --tune-delays measures at most ${DEFAULT_TIMING_MAX_COARSE} coarse durations and ${DEFAULT_TIMING_MAX_FINE} finer durations below the original delay. It never raises a delay. Races are not treated as monotonic. The reported duration is the smallest confirmed candidate among the durations actually replayed, not a proof about untested values. Each candidate is confirmed with the scenario's reductionConfirmRuns, and those runs are fresh replays. One kept delay step can be tuned. Several kept delay steps are skipped. A shorter delay is kept only after a new minimization and five fresh verification replays reproduce the original failure. Otherwise the verified step minimization is exported unchanged.
 

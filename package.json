@@ -30,12 +30,13 @@
     "test:runner": "node --test --test-concurrency=1 test/runner/safety.test.ts test/runner/replay.test.ts test/runner/minimize-live.test.ts test/runner/stale-search.test.ts test/runner/stale-minimize.test.ts test/runner/minimize-duration-live.test.ts",
     "test:export": "node --test test/export/regression.test.ts test/export/stale-regression.test.ts",
     "test:search": "node --test examples/stale-search/*.test.ts",
-    "test:cli": "node --test test/cli/args.test.ts test/cli/scenario.test.ts test/cli/command.test.ts",
-    "test:cli:e2e": "node --test test/cli/e2e.test.ts",
+    "test:cli": "node --test test/cli/args.test.ts test/cli/scenario.test.ts test/cli/command.test.ts test/cli/doctor.test.ts test/cli/init.test.ts",
+    "test:cli:e2e": "node --test --test-concurrency=1 test/cli/e2e.test.ts test/cli/opt-in-minimize.test.ts",
     "test:browsers": "npm run test:demo && npm run test:search && npm run test:runner && npm run test:export && npm run test:cli:e2e",
     "test:package": "node --test test/package/smoke.test.ts",
     "demo": "node examples/duplicate-submit/server.ts",
-    "demo:search": "node examples/stale-search/server.ts"
+    "demo:search": "node examples/stale-search/server.ts",
+    "demo:ticket": "node examples/opt-in-ticket/server.ts"
   },
   "dependencies": {
     "playwright": "^1.64.1"

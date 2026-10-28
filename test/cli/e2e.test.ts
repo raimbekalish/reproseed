@@ -13,6 +13,7 @@ import { startDemoServer, type DemoPage } from "../../examples/duplicate-submit/
 import { startSearchServer, type SearchPage } from "../../examples/stale-search/server.ts";
 import { EXIT } from "../../src/cli/errors.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
+import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
 import { CORE_IDS, TARGET_SIGNATURE } from "../fixture.ts";
 import { browserPids, browserProcessNote, leakedProcessNote, processCommand } from "../process-snapshot.ts";
 
@@ -488,6 +489,7 @@ function baseEnv(): NodeJS.ProcessEnv {
   delete env.REPROSEED_ORIGIN;
   delete env.REPROSEED_APP_ID;
   delete env.REPROSEED_RESET_AUTHORIZATION;
+  useInstalledPlaywrightBrowsers(env);
   return env;
 }
 

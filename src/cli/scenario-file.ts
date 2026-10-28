@@ -28,15 +28,60 @@ const BUDGET_FIELDS = [
  * JSON text is data. Nothing in the file is interpolated or sent to a shell.
  * `resetAuthorization` is accepted only from `REPROSEED_RESET_AUTHORIZATION`.
  */
-export async function loadScenarioFile(path: string, cwd: string, env: NodeJS.ProcessEnv): Promise<Scenario> {
+export type ScenarioDocument = {
+  id: string;
+  listedOrigin?: string;
+  listedAppId?: string;
+  reset: ResetSpec;
+  steps: Step[];
+  oracle: Oracle;
+  budget: Budget;
+};
+
+/**
+ * Reads scenario JSON without applying environment variables.
+ * Callers that reset still have to bind the target and call the safety checks.
+ */
+export async function readScenarioValue(path: string, cwd: string): Promise<unknown> {
   const absolute = await readableScenario(path, cwd);
   const text = await readFile(absolute, "utf8");
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    return JSON.parse(text) as unknown;
   } catch {
     throw new CliError("scenario file is not valid JSON", EXIT.usage);
   }
+}
+
+/**
+ * Validates scenario data without reading the environment.
+ * The listed origin is not treated as authorization. Step structure is checked
+ * against a placeholder loopback target so a bad step is reported on its own.
+ */
+export function parseScenarioDocument(parsed: unknown): ScenarioDocument {
+  rejectSecretKeys(parsed);
+  const record = objectRecord(parsed, "scenario");
+  rejectUnknown(record, TOP_LEVEL, "scenario");
+  const target = objectRecord(record.target, "target");
+  rejectUnknown(target, TARGET_FIELDS, "target");
+  const document: ScenarioDocument = {
+    id: requiredString(record, "id", "scenario id"),
+    ...(Object.hasOwn(target, "origin") ? { listedOrigin: requiredString(target, "origin", "target.origin") } : {}),
+    ...(Object.hasOwn(target, "appId") ? { listedAppId: requiredString(target, "appId", "target.appId") } : {}),
+    reset: parseReset(record.reset),
+    steps: parseSteps(record.steps),
+    oracle: parseOracle(record.oracle),
+    budget: parseBudget(record.budget),
+  };
+  assertScenarioDocument(document);
+  return document;
+}
+
+export function assertNoEmbeddedResetAuthorization(parsed: unknown, resetAuthorization: string): void {
+  rejectEmbeddedSecret(parsed, resetAuthorization);
+}
+
+export async function loadScenarioFile(path: string, cwd: string, env: NodeJS.ProcessEnv): Promise<Scenario> {
+  const parsed = await readScenarioValue(path, cwd);
   rejectSecretKeys(parsed);
   const record = objectRecord(parsed, "scenario");
   rejectUnknown(record, TOP_LEVEL, "scenario");
@@ -65,6 +110,27 @@ export async function loadScenarioFile(path: string, cwd: string, env: NodeJS.Pr
     throw new CliError(error instanceof Error ? error.message : "scenario is invalid", EXIT.usage);
   }
   return scenario;
+}
+
+function assertScenarioDocument(document: ScenarioDocument): void {
+  const scenario: Scenario = {
+    id: document.id,
+    target: {
+      origin: "http://127.0.0.1",
+      appId: document.listedAppId ?? "app",
+      resetAuthorization: "authorization",
+    },
+    reset: document.reset,
+    steps: document.steps,
+    oracle: document.oracle,
+    budget: document.budget,
+  };
+  try {
+    assertScenario(scenario);
+    assertBudget(scenario.budget);
+  } catch (error) {
+    throw new CliError(error instanceof Error ? error.message : "scenario is invalid", EXIT.usage);
+  }
 }
 
 async function readableScenario(path: string, cwd: string): Promise<string> {

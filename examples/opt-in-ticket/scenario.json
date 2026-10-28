@@ -1,0 +1,45 @@
+{
+  "id": "opt-in-ticket",
+  "target": {
+    "appId": "opt-in-ticket"
+  },
+  "reset": {
+    "method": "POST",
+    "path": "/__reproseed/reset",
+    "verify": {
+      "kind": "json-array-empty",
+      "method": "GET",
+      "path": "/api/tickets"
+    }
+  },
+  "steps": [
+    { "id": "open", "kind": "goto", "path": "/", "dependsOn": [] },
+    { "id": "decoy-note", "kind": "fill", "selector": "#note", "value": "not required", "dependsOn": ["open"] },
+    { "id": "email", "kind": "fill", "selector": "#email", "value": "person@example.com", "dependsOn": ["open"] },
+    {
+      "id": "slow-file",
+      "kind": "delay",
+      "urlIncludes": "/api/tickets",
+      "method": "POST",
+      "ms": 2000,
+      "dependsOn": []
+    },
+    { "id": "file-1", "kind": "click", "selector": "#file", "dependsOn": ["open", "email"] },
+    { "id": "gap", "kind": "wait", "ms": 800, "dependsOn": [] },
+    { "id": "file-2", "kind": "click", "selector": "#file", "dependsOn": ["open", "email"] }
+  ],
+  "oracle": {
+    "id": "record-count",
+    "request": { "method": "GET", "path": "/api/tickets" },
+    "match": { "field": "email", "value": "person@example.com" },
+    "expect": 1
+  },
+  "budget": {
+    "maxReplayExecutions": 60,
+    "maxWallClockMs": 300000,
+    "attemptTimeoutMs": 20000,
+    "baselineRuns": 3,
+    "reductionConfirmRuns": 2,
+    "verifyRuns": 5
+  }
+}

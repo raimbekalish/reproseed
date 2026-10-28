@@ -122,6 +122,62 @@ function annotateLaunchError(error: unknown, fallbackPath?: string): Error {
   return new Error(`${String(error)}\n${note}`);
 }
 
+export type ChromiumInstallation = {
+  ready: boolean;
+  detail: string;
+};
+
+const CHROMIUM_INSTALL = "npx playwright install --with-deps --no-shell chromium";
+
+/**
+ * Reports whether Playwright's downloaded Chromium revision is on disk.
+ * This does not launch a browser and does not contact a target.
+ */
+export function describeChromiumInstallation(probe?: {
+  executablePath: () => string;
+  exists: (path: string) => boolean;
+  fallback: (error: unknown) => string | undefined;
+}): ChromiumInstallation {
+  const executablePath = probe?.executablePath ?? (() => chromium.executablePath());
+  const exists = probe?.exists ?? existsSync;
+  const fallback = probe?.fallback ?? ((error: unknown) => fallbackPlaywrightExecutable(error));
+  let executable: string;
+  try {
+    executable = executablePath();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    return {
+      ready: false,
+      detail: `Playwright could not resolve Chromium (${oneLine(message)}). Install it with ${CHROMIUM_INSTALL}. Doctor did not launch a browser.`,
+    };
+  }
+  if (!exists(executable)) {
+    const recovered = fallback(new Error(`Executable doesn't exist at ${executable}`));
+    if (recovered === undefined || !exists(recovered) || !isDownloadedChromiumExecutable(recovered)) {
+      return {
+        ready: false,
+        detail: `Playwright's downloaded Chromium is not installed. Install it with ${CHROMIUM_INSTALL}. Doctor did not launch a browser.`,
+      };
+    }
+    executable = recovered;
+  }
+  if (!isDownloadedChromiumExecutable(executable)) {
+    return {
+      ready: false,
+      detail: "The resolved browser is not Playwright's downloaded Chromium revision. Doctor did not launch a browser.",
+    };
+  }
+  return {
+    ready: true,
+    detail: "Playwright's downloaded Chromium is installed. Doctor did not launch a browser.",
+  };
+}
+
+function oneLine(value: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length <= 180 ? compact : `${compact.slice(0, 180)}…`;
+}
+
 function isDownloadedChromiumExecutable(executablePath: string): boolean {
   const normalized = executablePath.replaceAll("\\", "/");
   if (normalized.includes("chrome-headless-shell") || normalized.includes("chromium_headless_shell-")) {

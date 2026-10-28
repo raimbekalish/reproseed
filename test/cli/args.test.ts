@@ -17,6 +17,9 @@ describe("cli arguments", () => {
     assert.equal(help.code, EXIT.verified);
     assert.equal(help.stderr, "");
     assert.match(help.stdout, /reproseed minimize/);
+    assert.match(help.stdout, /reproseed doctor/);
+    assert.match(help.stdout, /reproseed init/);
+    assert.match(help.stdout, /doctor does not reset/);
     assert.match(help.stdout, /does not target production websites/);
 
     const minimizeHelp = await capture(["minimize", "--help"]);

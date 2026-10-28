@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Opt-in ticket</title>
+</head>
+<body>
+  <h1>File a ticket</h1>
+  <p>This page is the buggy client. A second click while the first save is still in flight files another ticket.</p>
+  <form id="ticket-form">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="off">
+    <label for="note">Note</label>
+    <input id="note" name="note" type="text" autocomplete="off">
+    <button type="button" id="file">File ticket</button>
+  </form>
+  <p id="status"></p>
+  <script>
+    // The button stays enabled so a second click is delivered while the first request is in flight.
+    // The short guard ignores only an immediate double-click. A later click during the delayed response still files another ticket.
+    const GUARD_MS = 400;
+    let locked = false;
+    let lastFileAt = 0;
+    const emailInput = document.querySelector("#email");
+    const noteInput = document.querySelector("#note");
+    const fileButton = document.querySelector("#file");
+    const status = document.querySelector("#status");
+    if (
+      !(emailInput instanceof HTMLInputElement) ||
+      !(noteInput instanceof HTMLInputElement) ||
+      !(fileButton instanceof HTMLButtonElement) ||
+      !(status instanceof HTMLElement)
+    ) {
+      throw new Error("opt-in ticket form is incomplete");
+    }
+    fileButton.addEventListener("click", () => {
+      if (locked) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastFileAt < GUARD_MS) {
+        return;
+      }
+      lastFileAt = now;
+      const email = emailInput.value;
+      const note = noteInput.value;
+      fetch("/api/tickets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, note }),
+      }).then((response) => {
+        if (!response.ok) {
+          status.textContent = "Not filed";
+          return;
+        }
+        locked = true;
+        status.textContent = "Filed";
+      });
+    });
+  </script>
+</body>
+</html>
