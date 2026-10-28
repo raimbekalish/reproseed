@@ -9,7 +9,7 @@ import { startOptInServer } from "../examples/opt-in-ticket/server.ts";
 import { collectDoctorChecks, doctorExitCode, formatDoctorReport } from "../src/cli/doctor.ts";
 import { EXIT } from "../src/cli/errors.ts";
 import { loadScenarioFile } from "../src/cli/scenario-file.ts";
-import type { FetchLike } from "../src/runner/reset.ts";
+import { isListedRecord, readRecordList, resetAndConfirmEmpty, type FetchLike } from "../src/runner/reset.ts";
 
 const SCENARIO = fileURLToPath(new URL("../examples/opt-in-ticket/scenario.json", import.meta.url));
 const SERVER = fileURLToPath(new URL("../examples/opt-in-ticket/server.ts", import.meta.url));
@@ -61,6 +61,7 @@ describe("opt-in ticket example", () => {
       });
       assert.equal(right.status, 204);
       assert.equal((await tickets(server.origin)).length, 0);
+      assert.deepEqual(server.audits(), []);
       const scenario = await loadScenarioFile(SCENARIO, fileURLToPath(new URL("..", import.meta.url)), {
         REPROSEED_ORIGIN: server.origin,
         REPROSEED_APP_ID: APP_ID,
@@ -71,6 +72,77 @@ describe("opt-in ticket example", () => {
     } finally {
       await server.close();
     }
+  });
+
+  it("keeps reset history and ticket records on different endpoints", async () => {
+    const token = randomBytes(16).toString("hex");
+    const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
+    try {
+      await postTicket(server.origin, "person@example.com");
+      const history = server.audits();
+      assert.equal(history.length, 1);
+      assert.equal(isListedRecord(history[0]), false);
+      const records = await readRecordList({ origin: server.origin, path: "/api/tickets" });
+      assert.equal(records.length, 1);
+      assert.equal(isListedRecord(records[0]), true);
+      const paths: string[] = [];
+      await resetAndConfirmEmpty({
+        origin: server.origin,
+        expectedAppId: APP_ID,
+        resetAuthorization: token,
+        verify: { kind: "json-array-empty", method: "GET", path: "/api/reset-history" },
+        fetchImpl: async (input, init) => {
+          const url = input instanceof URL ? input : new URL(String(input));
+          paths.push(url.pathname);
+          return fetch(input, init);
+        },
+      });
+      assert.deepEqual(paths, ["/__reproseed/identity", "/__reproseed/reset", "/api/reset-history"]);
+      assert.equal((await readRecordList({ origin: server.origin, path: "/api/tickets" })).length, 0);
+      assert.deepEqual(server.audits(), []);
+      assert.equal(JSON.stringify(server.requests()).includes(token), false);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps the buggy page as the default and isolates the fixed page", async () => {
+    const token = randomBytes(16).toString("hex");
+    const buggy = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
+    const fixed = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token, page: "fixed" });
+    try {
+      const buggyPage = await (await fetch(`${buggy.origin}/`)).text();
+      const fixedPage = await (await fetch(`${fixed.origin}/`)).text();
+      assert.match(buggyPage, /GUARD_MS = 400/);
+      assert.equal(buggyPage.includes("test-only fixed client"), false);
+      assert.match(fixedPage, /test-only fixed client/);
+      assert.equal(fixedPage.includes("GUARD_MS"), false);
+      assert.equal(buggyPage.includes(token), false);
+      assert.equal(fixedPage.includes(token), false);
+      const refused = await fetch(`${fixed.origin}/__reproseed/reset`, {
+        method: "POST",
+        headers: {
+          "x-reproseed-app-id": APP_ID,
+          "x-reproseed-reset-authorization": `${token}no`,
+        },
+      });
+      assert.equal(refused.status, 403);
+      assert.equal((await tickets(fixed.origin)).length, 0);
+      await postTicket(fixed.origin, "person@example.com");
+      assert.equal((await tickets(fixed.origin)).length, 1);
+      const accepted = await fetch(`${fixed.origin}/__reproseed/reset`, {
+        method: "POST",
+        headers: {
+          "x-reproseed-app-id": APP_ID,
+          "x-reproseed-reset-authorization": token,
+        },
+      });
+      assert.equal(accepted.status, 204);
+      assert.equal((await tickets(fixed.origin)).length, 0);
+    } finally {
+      await Promise.all([buggy.close(), fixed.close()]);
+    }
+    await assert.rejects(startOptInServer({ page: "other" as "fixed" }), /page must be buggy or fixed/);
   });
 
   it("is diagnosed without a reset and the process log omits the credential", async () => {
@@ -100,6 +172,7 @@ describe("opt-in ticket example", () => {
       assert.equal(report.includes(token), false);
       assert.match(report, /not-verified\s+reset-accepted/);
       assert.match(report, /JSON array with 1 item/);
+      assert.match(report, /record-count shape/);
       assert.equal(calls.includes("POST"), false);
       assert.equal((await tickets(server.origin)).length, 1);
     } finally {

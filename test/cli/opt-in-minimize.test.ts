@@ -19,7 +19,7 @@ const PLAYWRIGHT = join(REPO, "node_modules/@playwright/test/cli.js");
 const APP_ID = "opt-in-ticket";
 
 describe("opt-in ticket through the built CLI", { concurrency: false }, () => {
-  it("diagnoses, minimizes, and exports a failing regression test", { timeout: 600_000 }, async () => {
+  it("diagnoses, minimizes, and runs the same spec red then green", { timeout: 600_000 }, async () => {
     const token = randomBytes(16).toString("hex");
     const root = await mkdtemp(join(tmpdir(), "reproseed-opt-in-"));
     const work = join(root, "work");
@@ -42,6 +42,7 @@ describe("opt-in ticket through the built CLI", { concurrency: false }, () => {
       assert.match(doctor.stdout, /did not launch a browser/);
       assert.match(doctor.stdout, /not-verified\s+reset-accepted/);
       assert.match(doctor.stdout, /JSON array with 1 item/);
+      assert.match(doctor.stdout, /record-count shape/);
       assert.equal(doctor.stdout.includes(token), false);
       assert.equal(doctor.stderr.includes(token), false);
       const afterDoctor = (await (await fetch(`${server.origin}/api/tickets`)).json()) as unknown[];
@@ -107,6 +108,105 @@ export default defineConfig({
       assert.deepEqual(
         records.map((record) => record.email),
         ["person@example.com", "person@example.com"],
+      );
+
+      const fixed = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token, page: "fixed" });
+      try {
+        const green = await runPlaywright(work, targetEnv(fixed.origin, token));
+        assert.equal(green.code, 0, green.output);
+        assert.equal(green.output.includes(token), false);
+        assert.equal(await readFile(join(work, "artifacts/ticket.spec.ts"), "utf8"), spec);
+        const fixedRecords = (await (await fetch(`${fixed.origin}/api/tickets`)).json()) as Array<{ email?: string }>;
+        assert.deepEqual(
+          fixedRecords.map((record) => record.email),
+          ["person@example.com"],
+        );
+        console.log(JSON.stringify({ red: { code: red.code, received: 2 }, green: { code: green.code, received: fixedRecords.length } }));
+      } finally {
+        await fixed.close();
+      }
+    } finally {
+      await server.close();
+      leaked = await waitForBrowsers(before);
+      for (const pid of leaked) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // The process already exited.
+        }
+      }
+      await rm(root, { recursive: true, force: true });
+    }
+    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+  });
+
+  it("minimizes when reset verification and the oracle use different endpoints", { timeout: 600_000 }, async () => {
+    const token = randomBytes(16).toString("hex");
+    const root = await mkdtemp(join(tmpdir(), "reproseed-split-"));
+    const work = join(root, "work");
+    await mkdir(work, { recursive: true });
+    const cli = await stagePackage(root);
+    const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
+    const before = await browserPids();
+    let leaked: number[] = [];
+    try {
+      const filed = await fetch(`${server.origin}/api/tickets`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "person@example.com", note: "stay" }),
+      });
+      assert.equal(filed.status, 201);
+      assert.equal(server.audits().some((audit) => "email" in audit), false);
+      const scenario = JSON.parse(await readFile(SCENARIO, "utf8")) as { reset: { verify: { path: string } } };
+      scenario.reset.verify.path = "/api/reset-history";
+      const scenarioPath = join(work, "scenario.json");
+      await writeFile(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`);
+      const env = targetEnv(server.origin, token);
+      const seeded = server.requests().length;
+      const doctor = await runCli(cli, ["doctor", scenarioPath], { cwd: work, env, timeout: 30_000 });
+      assert.equal(doctor.code, EXIT.verified, `${doctor.stdout}\n${doctor.stderr}`);
+      assert.match(doctor.stdout, /pass\s+clean-state-endpoint\s+GET \/api\/reset-history/);
+      assert.match(doctor.stdout, /any JSON array items/);
+      assert.match(doctor.stdout, /pass\s+oracle-endpoint\s+GET \/api\/tickets/);
+      assert.match(doctor.stdout, /record-count shape/);
+      assert.equal(doctor.stdout.includes(token), false);
+      const doctorHits = server.requests().slice(seeded);
+      assert.equal(doctorHits.includes("POST /__reproseed/reset"), false);
+      assert.equal(doctorHits.filter((hit) => hit === "GET /api/reset-history").length, 1);
+      assert.equal(doctorHits.filter((hit) => hit === "GET /api/tickets").length, 1);
+      assert.equal((await (await fetch(`${server.origin}/api/tickets`)).json() as unknown[]).length, 1);
+
+      const minimized = await runCli(
+        cli,
+        ["minimize", scenarioPath, "--report", "artifacts/report.json", "--spec", "artifacts/split.spec.ts"],
+        { cwd: work, env, timeout: 300_000 },
+      );
+      assert.equal(minimized.code, EXIT.verified, `${minimized.stdout}\n${minimized.stderr}`);
+      assert.match(minimized.stdout, /Status: verified-one-minimal/);
+      assert.match(minimized.stdout, /verify: 5/);
+      assert.equal(minimized.stdout.includes(token), false);
+      assert.equal(minimized.stderr.includes(token), false);
+      const reportText = await readFile(join(work, "artifacts/report.json"), "utf8");
+      const spec = await readFile(join(work, "artifacts/split.spec.ts"), "utf8");
+      assert.equal(reportText.includes(token), false);
+      assert.equal(spec.includes(token), false);
+      assert.match(spec, /\/api\/reset-history/);
+      assert.match(spec, /\/api\/tickets/);
+      assert.match(spec, /toBe\(1\)/);
+      const artifact = JSON.parse(reportText) as SanitizedMinimizeArtifact;
+      assert.equal(artifact.report.status, "verified-one-minimal");
+      assert.equal(artifact.report.counts.verifyReplays, 5);
+      assert.deepEqual(artifact.report.keptStepIds, ["open", "email", "slow-file", "file-1", "gap", "file-2"]);
+      const minimizeHits = server.requests().slice(seeded + doctorHits.length);
+      assert.equal(minimizeHits.includes("POST /__reproseed/reset"), true);
+      assert.equal(minimizeHits.includes("GET /api/reset-history"), true);
+      assert.equal(minimizeHits.includes("GET /api/tickets"), true);
+      console.log(
+        JSON.stringify({
+          doctorGets: { history: 1, tickets: 1, resetPosts: 0 },
+          kept: artifact.report.keptStepIds,
+          verifyReplays: artifact.report.counts.verifyReplays,
+        }),
       );
     } finally {
       await server.close();

@@ -69,12 +69,20 @@ Checks:
   scenario-schema     The scenario matches the supported schema
   environment         REPROSEED_ORIGIN, REPROSEED_APP_ID, and REPROSEED_RESET_AUTHORIZATION
   loopback-origin     The origin is http on 127.0.0.1, localhost, or ::1
-  target-available    The loopback application accepts a GET /
+  target-available    Each scenario goto path returns a successful GET.
+                      A connection failure, redirect, missing route, or server
+                      error is not success. When the scenario has no goto step,
+                      the request is GET /.
   target-identity     GET /__reproseed/identity returns the configured app id
   chromium            Playwright's downloaded Chromium revision is installed
   clean-state-endpoint
-                      The configured GET returns a JSON array. This is the current
-                      response, not proof that reset leaves it empty.
+                      reset.verify.path returns a JSON array. Item shape is not
+                      checked. This is the current response, not proof that reset
+                      leaves it empty.
+  oracle-endpoint     For record-count, oracle.request.path returns records with
+                      string id, email, and note, and numeric createdAt. An empty
+                      array passes. Doctor does not print record values. The two
+                      paths can differ. A dom-text oracle does not use a record list.
   reset-accepted      Not verified. Doctor does not ask the application to accept the credential.
   clean-state-after-reset
                       Not verified. Emptiness after reset requires a real reset.

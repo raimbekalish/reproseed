@@ -13,6 +13,12 @@ Work toward 0.2.0. This section is not a release. The package version stays 0.1.
 - `examples/opt-in-ticket`, a loopback application that opts in to identity, authorized reset, and a read-only clean-state list. It does not use the other demo servers.
 - [docs/integrate-your-app.md](docs/integrate-your-app.md), the path from a checkout to a local integration.
 
+### Changed
+
+- `reproseed doctor` checks `reset.verify.path` only as a JSON array. For a record-count scenario, `oracle-endpoint` checks `oracle.request.path` for string `id`, `email`, and `note`, and numeric `createdAt`. The paths can differ. An empty oracle array still passes. A DOM-text scenario does not request a record list. The diagnostic names the item and the field and does not print record values.
+- `reproseed doctor` treats each scenario `goto` response as ready only when the status is successful. A connection failure, a redirect, a missing route, and a server error stay distinct. `GET /` is requested only when the scenario has no `goto` step.
+- The opt-in ticket integration test runs one generated spec against the default buggy page, where the count is 2, and against a test-only fixed page, where the count is 1. The fixed page is not the default server and is not in the npm package.
+
 ## [0.1.0] - 2026-10-25
 
 The notes for this version are also in [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md).
