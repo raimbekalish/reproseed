@@ -45,7 +45,7 @@ Production targets are unsupported. The tool has no model for production account
 | 0.1.0, released October 25, 2026 | Yes |
 | Older commits | No |
 
-0.1.0 is the first release. There is no earlier supported version. Security fixes apply to that release. The release procedure is [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md).
+0.1.0 is the first published release. There is no earlier supported version. `0.2.0` is not published. Security fixes apply to the published release. The `0.1.0` procedure is [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md). The unpublished candidate checks are [docs/v0.2.0-release-checklist.md](docs/v0.2.0-release-checklist.md).
 
 ## Reporting a vulnerability
 

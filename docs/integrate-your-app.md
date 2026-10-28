@@ -1,12 +1,35 @@
 # Integrate your application
 
-This is the path from a ReproSeed checkout to a minimized scenario on an application you run locally. ReproSeed does not install reset hooks into an existing app. The application has to opt in.
+This is the path to a minimized scenario on an application you run locally. ReproSeed does not install reset hooks into an existing app. The application has to opt in.
 
-The published npm release is still 0.1.0. That package does not include `doctor` or `init`. The commands below are in this repository and are intended for 0.2.0. `--version` remains `0.1.0` until that release. `reproseed doctor --help` is how you tell the commands are present.
+The published npm release is `0.1.0`. That package does not include `doctor`, `init`, or `--trace`. This guide is for the `0.2.0` candidate in this repository. `--version` remains `0.1.0` until that release is published. `reproseed doctor --help` is how you tell those commands are present.
 
-## Install
+You do not need a git checkout to run the CLI. The example servers in this repository are a separate matter: they are not in the npm package.
 
-Requirements: Node.js 22 or newer, npm, and Playwright's downloaded Chromium for the version in `package-lock.json` (currently 1.64.1).
+## Install the package
+
+Requirements: Node.js 22 or newer, and npm. Tested on macOS and on GitHub-hosted Ubuntu with Node.js 22. Windows is not tested.
+
+```bash
+npm install reproseed
+npx playwright install --with-deps --no-shell chromium
+npx reproseed --help
+npx reproseed doctor --help
+```
+
+`--no-shell` skips `chrome-headless-shell`. The browser ReproSeed launches is Playwright `1.64.1`'s downloaded Chromium, `channel: "chromium"`, not system Chrome.
+
+This guide is shipped at `node_modules/reproseed/docs/integrate-your-app.md`. [docs/trace-evidence.md](trace-evidence.md) is beside it. The same files are on GitHub at `main`, which can be newer than the package you installed.
+
+`npm install reproseed` installs Playwright `1.64.1` for the CLI. It does not install `@playwright/test`. A generated spec imports `@playwright/test`. Install that package yourself when you want to run the spec:
+
+```bash
+npm install --save-dev @playwright/test@1.64.1
+```
+
+## Install from a checkout
+
+Use this when you are changing ReproSeed, or when you want the example servers.
 
 ```bash
 git clone https://github.com/raimbekalish/reproseed.git
@@ -17,9 +40,7 @@ npm run build
 node dist/cli.js --help
 ```
 
-`--no-shell` skips `chrome-headless-shell`. The browser ReproSeed launches later is Playwright's downloaded Chromium, `channel: "chromium"`, not system Chrome.
-
-A generated spec imports `@playwright/test`. That package is not installed by `npm install reproseed`. This checkout already has it as a dev dependency. Running the spec elsewhere needs `@playwright/test` at the same Playwright version.
+A checkout already has `@playwright/test` as a dev dependency at `1.64.1`.
 
 ## Create a scenario
 
@@ -102,6 +123,8 @@ export REPROSEED_ORIGIN=http://127.0.0.1:4030
 ```
 
 ## Check without resetting
+
+From an installed package, the command is `npx reproseed`. The `node dist/cli.js` form below is a checkout of this repository. `examples/opt-in-ticket` is in the repository and is not in the npm package.
 
 `doctor` reads the scenario and, when the origin is authorized loopback, sends GET requests only. It does not send `POST /__reproseed/reset`. It does not launch a browser. It does not follow redirects. It does not print the credential or record values.
 

@@ -1,5 +1,7 @@
 # Release checklist
 
+This list is the record for the 0.1.0 release dated October 25, 2026. The unpublished 0.2.0 candidate uses [v0.2.0-release-checklist.md](v0.2.0-release-checklist.md). Do not treat that candidate as a publication.
+
 Use this list for the 0.1.0 release dated October 25, 2026. The publication-day documentation uses that date. The annotated tag and `npm publish` stay separate owner steps in [publish-runbook.md](publish-runbook.md). The notes are [v0.1.0-release-notes.md](v0.1.0-release-notes.md).
 
 Complete every item on the commit you intend to release. Record the commit SHA next to the checks you ran.

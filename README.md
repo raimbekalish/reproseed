@@ -2,23 +2,32 @@
 
 ReproSeed is a local command-line tool. You give it a failing scenario for an authorized loopback test application. It deletes steps that are not required for that failure, then writes a Playwright regression test for the steps that remain.
 
-The published release is `0.1.0`, released October 25, 2026. This repository also contains unreleased `doctor` and `init` commands for the next release. `reproseed --version` still prints `0.1.0` until that release is published. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
+The published release is `0.1.0`, released October 25, 2026. This repository is preparing `0.2.0`. `package.json` stays at `0.1.0`, and `reproseed --version` prints `0.1.0`, until that release is published. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
 
 ## Install
 
+Node.js 22 or newer. The tested environments are macOS for development and GitHub-hosted Ubuntu with Node.js 22. Windows is not tested.
+
 ```bash
 npm install reproseed
+npx playwright install --with-deps --no-shell chromium
 npx reproseed --help
 npx reproseed --version
 ```
 
-That install provides the `reproseed` command and the `playwright` dependency. The browser is Playwright 1.64.1's downloaded Chromium, selected with `channel: "chromium"`. It is not system Chrome and not `chrome-headless-shell`. Install that browser with:
+`npm install reproseed` from the registry today installs published `0.1.0`. That release minimizes a scenario and writes a regression test. It does not include `doctor`, `init`, or `--trace`.
+
+A tarball packed from this repository includes those commands. It also includes [docs/integrate-your-app.md](docs/integrate-your-app.md) and [docs/trace-evidence.md](docs/trace-evidence.md). After you install that tarball, the same files are at `node_modules/reproseed/docs/`. The copies on [GitHub](https://github.com/raimbekalish/reproseed/blob/main/docs/integrate-your-app.md) follow `main` and can move ahead of a published version. The copy inside the package matches the version you installed.
+
+The install provides the `reproseed` command and Playwright `1.64.1`. The browser is that release's downloaded Chromium, selected with `channel: "chromium"`. It is not system Chrome and not `chrome-headless-shell`.
+
+A generated spec imports `@playwright/test`. That package is not a dependency of `reproseed`, and this install does not add it. Install it yourself before you run the spec:
 
 ```bash
-npx playwright install --with-deps --no-shell chromium
+npm install --save-dev @playwright/test@1.64.1
 ```
 
-A generated spec imports `@playwright/test`. That package is not installed with `reproseed`. Running the spec needs Node.js 22 or newer, `@playwright/test` at Playwright 1.64.1, the Chromium above, `REPROSEED_ORIGIN`, `REPROSEED_APP_ID`, `REPROSEED_RESET_AUTHORIZATION`, and a loopback application you started. The demo servers are in this git repository. They are not in the npm package. The quick start below is for that repository checkout.
+Running the spec also needs the Chromium above, `REPROSEED_ORIGIN`, `REPROSEED_APP_ID`, `REPROSEED_RESET_AUTHORIZATION`, and a loopback application you started. The demo servers are in this git repository. They are not in the npm package. The quick start below is for a checkout of this repository. The integration guide is the path that does not use those demos.
 
 ## What it currently supports
 
@@ -44,7 +53,7 @@ Design notes that are not a user guide live in [docs/future-phase-corrections.md
 
 ## Integrate an application
 
-[docs/integrate-your-app.md](docs/integrate-your-app.md) is the path from this checkout to a scenario on your own loopback app. `reproseed init` writes a starter scenario. `reproseed doctor` checks it without sending `POST /__reproseed/reset`. For a record-count scenario it checks `oracle.request.path` for the record shape the minimizer reads. `reset.verify.path` only has to return a JSON array, and the two paths can differ. It treats a connection failure, a redirect, a missing page, and a server error as different results. `examples/opt-in-ticket` is one application that opts in. Its default page is buggy. A test-only fixed page is used to show the same generated spec passing, and that page is not what `npm run demo:ticket` serves. The example is not one of the two demos below, and it is not in the npm package. The published 0.1.0 package does not include `doctor` or `init`.
+[docs/integrate-your-app.md](docs/integrate-your-app.md) is the path to a scenario on your own loopback app. From an install of this tree, the same guide is `node_modules/reproseed/docs/integrate-your-app.md`. `reproseed init` writes a starter scenario. `reproseed doctor` checks it without sending `POST /__reproseed/reset`. For a record-count scenario it checks `oracle.request.path` for the record shape the minimizer reads. `reset.verify.path` only has to return a JSON array, and the two paths can differ. It treats a connection failure, a redirect, a missing page, and a server error as different results. `examples/opt-in-ticket` is one application that opts in. Its default page is buggy. A test-only fixed page is used to show the same generated spec passing, and that page is not what `npm run demo:ticket` serves. The example server is not one of the two demos below, and it is not in the npm package. Published `0.1.0` does not include `doctor`, `init`, or `--trace`. Those commands are in this repository for the `0.2.0` candidate.
 
 ## Quick start
 

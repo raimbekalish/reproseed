@@ -2,6 +2,8 @@
 
 `--trace` records one Playwright trace of the minimized scenario. It is off unless you pass a `.zip` path.
 
+This guide is included in the npm package at `docs/trace-evidence.md`. After you install ReproSeed, that path is under `node_modules/reproseed/docs/`. The copy on GitHub follows `main` and can be newer than the installed package. Published `0.1.0` does not include `--trace`. The command is in this repository for the `0.2.0` candidate, and `reproseed --version` stays `0.1.0` until that release is published.
+
 ```bash
 reproseed minimize scenario.json --trace artifacts/repro.zip
 ```
