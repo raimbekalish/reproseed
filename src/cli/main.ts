@@ -14,6 +14,7 @@ export type CliIo = {
   stderr: (text: string) => void;
   minimize?: MinimizeCommand["minimize"];
   preflight?: MinimizeCommand["preflight"];
+  captureTrace?: MinimizeCommand["captureTrace"];
   doctorFetch?: DoctorCommand["fetchImpl"];
   doctorChromium?: DoctorCommand["inspectChromium"];
 };
@@ -56,6 +57,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
       scenarioPath: parsed.scenarioPath,
       reportPath: parsed.reportPath,
       specPath: parsed.specPath,
+      ...(parsed.tracePath !== undefined ? { tracePath: parsed.tracePath } : {}),
       force: parsed.force,
       ...(parsed.tuneDelays !== undefined ? { tuneDelays: parsed.tuneDelays } : {}),
       cwd: io.cwd,
@@ -64,6 +66,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
       stderr,
       ...(io.minimize !== undefined ? { minimize: io.minimize } : {}),
       ...(io.preflight !== undefined ? { preflight: io.preflight } : {}),
+      ...(io.captureTrace !== undefined ? { captureTrace: io.captureTrace } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "reproseed failed";

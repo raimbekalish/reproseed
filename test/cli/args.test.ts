@@ -37,6 +37,9 @@ describe("cli arguments", () => {
     assert.match(minimizeHelp.stdout, new RegExp(`\\n\\s*${EXIT.internal}\\s+The runner`));
     assert.match(minimizeHelp.stdout, /not a global proof/);
     assert.match(minimizeHelp.stdout, /not a minimization failure/);
+    assert.match(minimizeHelp.stdout, /--trace <file\.zip>/);
+    assert.match(minimizeHelp.stdout, /Tracing stays off during minimization/);
+    assert.match(minimizeHelp.stdout, /does not change these codes/);
     assert.match(minimizeHelp.stdout, /--tune-delays/);
     assert.match(minimizeHelp.stdout, /--timing-resolution/);
     assert.match(minimizeHelp.stdout, /250/);
@@ -73,6 +76,13 @@ describe("cli arguments", () => {
     assert.equal(version.code, EXIT.usage);
     assert.match(version.stderr, /--version does not take other arguments/);
 
+    const missingTrace = await capture(["minimize", "scenario.json", "--trace"]);
+    assert.equal(missingTrace.code, EXIT.usage);
+    assert.match(missingTrace.stderr, /--trace requires a file path/);
+    const repeatedTrace = await capture(["minimize", "scenario.json", "--trace", "a.zip", "--trace", "b.zip"]);
+    assert.equal(repeatedTrace.code, EXIT.usage);
+    assert.match(repeatedTrace.stderr, /--trace was provided more than once/);
+
     const parsed = parseArgs(["minimize", "--report=out/report.json", "scenario.json", "--spec", "out/spec.ts", "--force"]);
     assert.deepEqual(parsed, {
       kind: "minimize",
@@ -81,6 +91,11 @@ describe("cli arguments", () => {
       specPath: "out/spec.ts",
       force: true,
     });
+    const traced = parseArgs(["minimize", "scenario.json", "--trace=artifacts/repro.zip"]);
+    assert.equal(traced.kind, "minimize");
+    if (traced.kind === "minimize") {
+      assert.equal(traced.tracePath, "artifacts/repro.zip");
+    }
 
     const tuned = parseArgs([
       "minimize",

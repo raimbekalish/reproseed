@@ -181,6 +181,19 @@ On a verified duplicate-submit run, `report.status` is `verified-one-minimal` an
 
 Do not commit the report. It can still contain scenario data such as the example email address. See [SECURITY.md](SECURITY.md) before you share one.
 
+## Optional trace
+
+`--trace` is off by default. After `verified-one-minimal`, ReproSeed can replay the exported scenario once more with Playwright tracing:
+
+```bash
+npm run cli -- minimize examples/duplicate-submit/scenario.json \
+  --report artifacts/report.json \
+  --spec artifacts/minimized.spec.ts \
+  --trace artifacts/repro.zip
+```
+
+That replay is not one of the five verification replays and is not added to the replay counts. Tracing stays off while steps are being removed. The zip is verified evidence only when the extra replay reproduces the same failure. Open it with `npx playwright show-trace artifacts/repro.zip`. The trace can contain page data. [docs/trace-evidence.md](docs/trace-evidence.md) explains what the file does and does not prove.
+
 ## Exported Playwright test
 
 `reproseed minimize` does not run the generated test. While the demo is still the buggy page, that test fails. A Playwright failure on the buggy page means the regression caught the bug. It does not mean minimization failed.

@@ -16,6 +16,7 @@ import { readRecordList, resetAndConfirmEmpty, ResetFailed, type FetchLike } fro
 import { assertPageStayed } from "./safety.ts";
 import { createBrowserPool, launchChromium, type BrowserPool } from "./session.ts";
 import { settleAnimationFrames, trackOriginRequests } from "./settle.ts";
+import { settleTraceSave, TRACE_START_OPTIONS } from "./trace-evidence.ts";
 import {
   bounded,
   CLEANUP_BUDGET_MS,
@@ -86,11 +87,62 @@ export function startReplayRuntime(options?: {
   };
 }
 
+export type IsolatedReplay = {
+  outcome: ExecutionOutcome;
+  traceSaved: boolean;
+  traceError?: string;
+};
+
+/**
+ * One replay in its own browser, outside the minimizer's runtime and counts.
+ * When `tracePath` is set, tracing starts after the context is created and
+ * before the first page action. The reset request stays a Node fetch and is
+ * not given a trace title or metadata field.
+ */
+export async function replayIsolated(input: {
+  scenario: Scenario;
+  stepIds: readonly string[];
+  fetchImpl?: FetchLike;
+  launchBrowser?: () => Promise<Browser>;
+  tracePath?: string;
+}): Promise<IsolatedReplay> {
+  const pool = createBrowserPool(input.launchBrowser ?? launchChromium);
+  const trace: TraceSave | undefined =
+    input.tracePath === undefined ? undefined : { path: input.tracePath, saved: false };
+  try {
+    let prepared: PreparedReplay;
+    try {
+      prepared = prepareReplay(input.scenario, input.stepIds);
+    } catch (error) {
+      return {
+        outcome: runnerOutcome(0, error),
+        traceSaved: false,
+        traceError: errorMessage(error),
+      };
+    }
+    const outcome = await executePrepared(prepared, Date.now(), pool, input.fetchImpl ?? fetch, trace);
+    return {
+      outcome,
+      traceSaved: trace?.saved === true,
+      ...(trace?.error !== undefined ? { traceError: trace.error } : {}),
+    };
+  } finally {
+    await pool.close();
+  }
+}
+
+type TraceSave = {
+  path: string;
+  saved: boolean;
+  error?: string;
+};
+
 async function executePrepared(
   prepared: PreparedReplay,
   startedAt: number,
   pool: BrowserPool,
   fetchImpl: FetchLike,
+  trace?: TraceSave,
 ): Promise<ExecutionOutcome> {
   const { scenario, origin, steps } = prepared;
   const timeoutMs = scenario.budget.attemptTimeoutMs;
@@ -100,6 +152,7 @@ async function executePrepared(
   let context: BrowserContext | undefined;
   let contextClose: Promise<string | undefined> | undefined;
   let browserDisconnected = false;
+  let tracingStarted = false;
   let outcome: ExecutionOutcome | undefined;
 
   const closeContext = (): Promise<string | undefined> => {
@@ -111,12 +164,34 @@ async function executePrepared(
       return Promise.resolve(undefined);
     }
     contextClose = (async () => {
+      const notes: string[] = [];
+      if (tracingStarted) {
+        tracingStarted = false;
+        if (trace === undefined) {
+          try {
+            await bounded(current.tracing.stop(), CLEANUP_BUDGET_MS, "trace save timed out");
+          } catch (error) {
+            notes.push(`trace save failed: ${errorMessage(error)}`);
+          }
+        } else {
+          const settled = await settleTraceSave({
+            stop: () => current.tracing.stop({ path: trace.path }),
+            path: trace.path,
+            budgetMs: CLEANUP_BUDGET_MS,
+          });
+          trace.saved = settled.saved;
+          if (settled.error !== undefined) {
+            trace.error = settled.error;
+            notes.push(`trace save failed: ${settled.error}`);
+          }
+        }
+      }
       try {
         await bounded(current.close(), CLEANUP_BUDGET_MS, "browser context cleanup timed out");
-        return undefined;
       } catch (error) {
-        return errorMessage(error);
+        notes.push(errorMessage(error));
       }
+      return notes.length > 0 ? notes.join("; ") : undefined;
     })();
     return contextClose;
   };
@@ -151,6 +226,10 @@ async function executePrepared(
     };
     throwIfAborted(controller.signal);
     context = await browser.newContext();
+    if (trace !== undefined) {
+      await context.tracing.start({ ...TRACE_START_OPTIONS });
+      tracingStarted = true;
+    }
     if (controller.signal.aborted) {
       throw new ReplayTimeout();
     }

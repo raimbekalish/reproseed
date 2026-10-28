@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -11,10 +11,10 @@ import vm from "node:vm";
 import { EXIT } from "../../src/cli/errors.ts";
 import { exitCodeForStatus } from "../../src/cli/format.ts";
 import { main } from "../../src/cli/main.ts";
-import type { MinimizeRunner } from "../../src/cli/run.ts";
+import type { MinimizeRunner, TraceCapture } from "../../src/cli/run.ts";
 import type { MinimizeReport, MinimizeStatus, Scenario } from "../../src/core/types.ts";
 import { optimizeVerifiedDuration } from "../../src/runner/minimize-duration.ts";
-import { CORE_IDS, outcomeForDuplicateSubmit } from "../fixture.ts";
+import { CORE_IDS, duplicateSignature, outcomeForDuplicateSubmit } from "../fixture.ts";
 import { verifiedMinimizeReport } from "../export/verified-report.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/duplicate-submit/scenario.json", import.meta.url));
@@ -54,6 +54,8 @@ describe("minimize command", () => {
       assert.match(result.stdout, /\[redacted\]/);
       assert.match(result.stdout, /not a proof of the globally shortest reproduction/);
       assert.equal(result.stdout.includes("Timing optimization"), false);
+      assert.equal(result.stdout.includes("Trace evidence"), false);
+      assert.deepEqual((await readdir(join(directory, "artifacts"))).sort(), ["minimized.spec.ts", "report.json"]);
       const report = await readFile(join(directory, "artifacts/report.json"), "utf8");
       const spec = await readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8");
       assert.equal(report.includes(token), false);
@@ -258,6 +260,277 @@ describe("minimize command", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("rejects an unsafe or colliding trace path before reset or minimization", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-trace-path-"));
+    try {
+      const blocked = await run(directory, token, {
+        args: ["--trace", "../repro.zip"],
+        ...guards(),
+      });
+      assert.equal(blocked.code, EXIT.usage);
+      assert.match(blocked.stderr, /must stay inside the current directory/);
+
+      const extension = await run(directory, token, {
+        args: ["--trace", "repro.txt"],
+        ...guards(),
+      });
+      assert.equal(extension.code, EXIT.usage);
+      assert.match(extension.stderr, /trace path must end in \.zip/);
+
+      await mkdir(join(directory, "artifacts"), { recursive: true });
+      await writeFile(join(directory, "artifacts/repro.zip"), "keep-zip");
+      await writeFile(join(directory, "artifacts/report.json"), "keep-report");
+      const exists = await run(directory, token, {
+        args: ["--trace", "artifacts/repro.zip"],
+        ...guards(),
+      });
+      assert.equal(exists.code, EXIT.usage);
+      assert.match(exists.stderr, /refusing to overwrite/);
+      assert.equal(await readFile(join(directory, "artifacts/repro.zip"), "utf8"), "keep-zip");
+      assert.equal(await readFile(join(directory, "artifacts/report.json"), "utf8"), "keep-report");
+
+      await writeFile(join(directory, "real.zip"), "keep-real");
+      await symlink("real.zip", join(directory, "link.zip"));
+      const linked = await run(directory, token, {
+        args: ["--trace", "link.zip"],
+        ...guards(),
+      });
+      assert.equal(linked.code, EXIT.usage);
+      assert.match(linked.stderr, /symlink/);
+      assert.equal(await readFile(join(directory, "real.zip"), "utf8"), "keep-real");
+
+      const reportCollision = await run(directory, token, {
+        args: ["--trace", "artifacts/report.json"],
+        ...guards(),
+      });
+      assert.equal(reportCollision.code, EXIT.usage);
+      assert.match(reportCollision.stderr, /trace path must end in \.zip/);
+      assert.equal(await readFile(join(directory, "artifacts/report.json"), "utf8"), "keep-report");
+
+      const scenarioZip = join(directory, "scenario.zip");
+      await copyFile(EXAMPLE, scenarioZip);
+      const before = await readFile(scenarioZip, "utf8");
+      const collision = await run(directory, token, {
+        scenario: "scenario.zip",
+        args: ["--trace", "scenario.zip"],
+        ...guards(),
+      });
+      assert.equal(collision.code, EXIT.usage);
+      assert.match(collision.stderr, /scenario file must end in \.json/);
+      assert.equal(await readFile(scenarioZip, "utf8"), before);
+      assert.equal(blocked.stdout.includes(token), false);
+      assert.equal(blocked.stderr.includes(token), false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a verified trace for the kept steps and leaves replay counts unchanged", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-trace-ok-"));
+    try {
+      let captured = 0;
+      const result = await run(directory, token, {
+        args: ["--trace", "artifacts/repro.zip"],
+        minimize: async (input) => verifiedMinimizeReport(input.scenario, CORE_IDS),
+        captureTrace: async ({ scenario, stepIds, tracePath }) => {
+          captured += 1;
+          assert.equal(scenario.target.resetAuthorization, token);
+          assert.deepEqual(stepIds, [...CORE_IDS]);
+          await writeFile(tracePath, "trace-bytes");
+          return { outcome: outcomeForDuplicateSubmit(stepIds), traceSaved: true };
+        },
+      });
+      assert.equal(result.code, EXIT.verified, result.stderr);
+      assert.equal(captured, 1);
+      assert.match(result.stdout, /verify: 5/);
+      assert.match(result.stdout, /Trace evidence: verified/);
+      assert.match(result.stdout, /omitted from the replay counts/);
+      assert.equal(result.stdout.includes("Trace evidence: not-reproduced"), false);
+      assert.equal(result.stdout.includes(token), false);
+      assert.equal(result.stderr.includes(token), false);
+      assert.equal(await readFile(join(directory, "artifacts/repro.zip"), "utf8"), "trace-bytes");
+      const report = JSON.parse(await readFile(join(directory, "artifacts/report.json"), "utf8")) as {
+        report: { counts: { replayExecutions: number; baselineReplays: number; searchReplays: number; verifyReplays: number } };
+      };
+      assert.equal(report.report.counts.verifyReplays, 5);
+      assert.equal(
+        report.report.counts.replayExecutions,
+        report.report.counts.baselineReplays + report.report.counts.searchReplays + report.report.counts.verifyReplays,
+      );
+      assert.match(result.stdout, new RegExp(`Replay executions: ${report.report.counts.replayExecutions}`));
+      const names = await readdir(join(directory, "artifacts"));
+      assert.deepEqual(names.filter((name) => name.startsWith(".reproseed-trace-")), []);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not label a changed evidence signature as verified", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-trace-miss-"));
+    try {
+      const result = await run(directory, token, {
+        args: ["--trace", "artifacts/repro.zip"],
+        minimize: async (input) => verifiedMinimizeReport(input.scenario, CORE_IDS),
+        captureTrace: async ({ tracePath }) => {
+          await writeFile(tracePath, "different-signature");
+          return {
+            outcome: { status: "fail", durationMs: 3, signature: duplicateSignature(9) },
+            traceSaved: true,
+          };
+        },
+      });
+      assert.equal(result.code, EXIT.verified, result.stderr);
+      assert.match(result.stdout, /Trace evidence: not-reproduced/);
+      assert.match(result.stderr, /not-reproduced/);
+      assert.equal(result.stdout.includes("Trace evidence: verified"), false);
+      assert.equal(await readFile(join(directory, "artifacts/repro.zip"), "utf8"), "different-signature");
+      const report = await readFile(join(directory, "artifacts/report.json"), "utf8");
+      const spec = await readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8");
+      assert.equal(report.includes("not-reproduced"), false);
+      assert.equal(spec.includes("not-reproduced"), false);
+      assert.match(spec, /expect\(actual\)\.toBe\(1\)/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves an existing trace when capture fails and warns that it may be stale", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-trace-fail-"));
+    try {
+      const baseline = await run(directory, token, {
+        minimize: async (input) => verifiedMinimizeReport(input.scenario, CORE_IDS),
+      });
+      assert.equal(baseline.code, EXIT.verified, baseline.stderr);
+      const report = await readFile(join(directory, "artifacts/report.json"), "utf8");
+      const spec = await readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8");
+      await writeFile(join(directory, "artifacts/repro.zip"), "previous-trace");
+      const failed = await run(directory, token, {
+        args: ["--force", "--trace", "artifacts/repro.zip"],
+        minimize: async (input) => verifiedMinimizeReport(input.scenario, CORE_IDS),
+        captureTrace: async () => {
+          throw new Error(`capture blew up ${token}`);
+        },
+      });
+      assert.equal(failed.code, EXIT.verified, failed.stderr);
+      assert.match(failed.stderr, /Trace evidence: failed/);
+      assert.match(failed.stderr, /left unchanged from an earlier run/);
+      assert.match(failed.stderr, /may be stale/);
+      assert.match(failed.stderr, /not verified evidence for this run/);
+      assert.equal(failed.stderr.includes("Trace evidence: verified"), false);
+      assert.equal(failed.stderr.includes("show-trace"), false);
+      assert.equal(failed.stdout.includes("show-trace"), false);
+      assert.match(failed.stderr, /\[redacted\]/);
+      assert.equal(failed.stderr.includes(token), false);
+      assert.equal(failed.stdout.includes(token), false);
+      assert.equal(failed.stdout.includes("Trace evidence: verified"), false);
+      assert.equal(await readFile(join(directory, "artifacts/report.json"), "utf8"), report);
+      assert.equal(await readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8"), spec);
+      assert.equal(await readFile(join(directory, "artifacts/repro.zip"), "utf8"), "previous-trace");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not record verified trace evidence for an unverified minimization", async () => {
+    const token = randomBytes(16).toString("hex");
+    const directory = await mkdtemp(join(tmpdir(), "reproseed-trace-skip-"));
+    try {
+      let captured = 0;
+      const result = await run(directory, token, {
+        args: ["--trace", "artifacts/repro.zip"],
+        minimize: async () => plainReport("unstable", `unstable ${token}`),
+        captureTrace: async () => {
+          captured += 1;
+          return { outcome: { status: "pass", durationMs: 1 }, traceSaved: true };
+        },
+      });
+      assert.equal(result.code, EXIT.unstable);
+      assert.equal(captured, 0);
+      assert.match(result.stderr, /Trace evidence was skipped/);
+      assert.equal(result.stdout.includes("Trace evidence: verified"), false);
+      assert.equal(result.stdout.includes(token), false);
+      await assert.rejects(readFile(join(directory, "artifacts/repro.zip"), "utf8"));
+      const report = await readFile(join(directory, "artifacts/report.json"), "utf8");
+      assert.equal(report.includes(token), false);
+      await assert.rejects(readFile(join(directory, "artifacts/minimized.spec.ts"), "utf8"));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("traces the delay from the exported scenario", async () => {
+    const token = randomBytes(16).toString("hex");
+    const tunedDirectory = await mkdtemp(join(tmpdir(), "reproseed-trace-tuned-"));
+    const keptDirectory = await mkdtemp(join(tmpdir(), "reproseed-trace-kept-"));
+    try {
+      let tunedDelay = 0;
+      const tuned = await run(tunedDirectory, token, {
+        args: ["--tune-delays", "--timing-resolution", "500", "--trace", "artifacts/repro.zip"],
+        minimize: async (input) => {
+          const stage1 = verifiedMinimizeReport(input.scenario, CORE_IDS);
+          return optimizeVerifiedDuration({
+            scenario: input.scenario,
+            stage1,
+            config: input.tuneDelays ?? { resolutionMs: 500, maxReplayExecutions: 40, maxWallClockMs: 60_000 },
+            now: () => 0,
+            probeFor: (variant) => async (ids) => {
+              const ms = delayMs(variant);
+              if (ms !== 500 && ms < 2000) {
+                return { status: "pass", durationMs: 1 };
+              }
+              return outcomeForDuplicateSubmit(ids);
+            },
+          });
+        },
+        captureTrace: async ({ scenario, tracePath }) => {
+          tunedDelay = delayMs(scenario);
+          await writeFile(tracePath, "tuned-trace");
+          return { outcome: outcomeForDuplicateSubmit(CORE_IDS), traceSaved: true };
+        },
+      });
+      assert.equal(tuned.code, EXIT.verified, tuned.stderr);
+      assert.equal(tunedDelay, 500);
+      assert.match(tuned.stdout, /Trace evidence: verified/);
+      assert.equal(embeddedDelayMs(await readFile(join(tunedDirectory, "artifacts/minimized.spec.ts"), "utf8")), 500);
+      assert.equal(await readFile(join(tunedDirectory, "artifacts/repro.zip"), "utf8"), "tuned-trace");
+
+      let keptDelay = 0;
+      const kept = await run(keptDirectory, token, {
+        args: ["--tune-delays", "--timing-resolution", "500", "--trace", "artifacts/repro.zip"],
+        minimize: async (input) => {
+          const stage1 = verifiedMinimizeReport(input.scenario, CORE_IDS);
+          return optimizeVerifiedDuration({
+            scenario: input.scenario,
+            stage1,
+            config: input.tuneDelays ?? { resolutionMs: 500, maxReplayExecutions: 36, maxWallClockMs: 180_000 },
+            now: () => 0,
+            probeFor: () => async () => ({
+              status: "error",
+              durationMs: 1,
+              error: "timing probe missed",
+              signature: { oracleId: "runner", code: "RUNNER_ERROR", facts: { message: "timing probe missed" } },
+            }),
+          });
+        },
+        captureTrace: async ({ scenario, tracePath }) => {
+          keptDelay = delayMs(scenario);
+          await writeFile(tracePath, "kept-trace");
+          return { outcome: outcomeForDuplicateSubmit(CORE_IDS), traceSaved: true };
+        },
+      });
+      assert.equal(kept.code, EXIT.verified, kept.stderr);
+      assert.equal(keptDelay, 2000);
+      assert.equal(embeddedDelayMs(await readFile(join(keptDirectory, "artifacts/minimized.spec.ts"), "utf8")), 2000);
+    } finally {
+      await rm(tunedDirectory, { recursive: true, force: true });
+      await rm(keptDirectory, { recursive: true, force: true });
+    }
+  });
 });
 
 async function run(
@@ -265,14 +538,16 @@ async function run(
   token: string,
   options: {
     args?: readonly string[];
+    scenario?: string;
     env?: NodeJS.ProcessEnv;
     minimize?: MinimizeRunner;
     preflight?: () => Promise<void>;
+    captureTrace?: TraceCapture;
   },
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   let stdout = "";
   let stderr = "";
-  const code = await main(["minimize", EXAMPLE, ...(options.args ?? [])], {
+  const code = await main(["minimize", options.scenario ?? EXAMPLE, ...(options.args ?? [])], {
     cwd,
     env: {
       REPROSEED_ORIGIN: "http://127.0.0.1:4010",
@@ -288,8 +563,20 @@ async function run(
     },
     preflight: options.preflight ?? (async () => undefined),
     ...(options.minimize !== undefined ? { minimize: options.minimize } : {}),
+    ...(options.captureTrace !== undefined ? { captureTrace: options.captureTrace } : {}),
   });
   return { code, stdout, stderr };
+}
+
+function guards(): { preflight: () => Promise<void>; minimize: MinimizeRunner } {
+  return {
+    preflight: async () => {
+      throw new Error("preflight ran");
+    },
+    minimize: async () => {
+      throw new Error("minimize ran");
+    },
+  };
 }
 
 function delayMs(scenario: Scenario): number {
