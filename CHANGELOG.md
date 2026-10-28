@@ -12,7 +12,7 @@ Work toward 0.2.0. This section is not a release. The package version stays 0.1.
 - `reproseed doctor` checks a scenario, the loopback target, Chromium, and the clean-state GET without sending `POST /__reproseed/reset` or launching a browser.
 - `reproseed init` writes a starter scenario for the record-count or DOM-text oracle. It does not embed a reset credential or a production URL.
 - `examples/opt-in-ticket`, a loopback application that opts in to identity, authorized reset, and a read-only clean-state list. It does not use the other demo servers.
-- [docs/integrate-your-app.md](docs/integrate-your-app.md) and [docs/trace-evidence.md](docs/trace-evidence.md) are included in the npm package. `npm install reproseed` installs Playwright `1.64.1` for the CLI. It does not install `@playwright/test`, which a generated spec imports.
+- [docs/integrate-your-app.md](docs/integrate-your-app.md) and [docs/trace-evidence.md](docs/trace-evidence.md) are included in the 0.2.0 candidate tarball. Published `0.1.0` does not include those guides, `doctor`, `init`, or `--trace`. The CLI dependency is Playwright `1.64.1`. Installing ReproSeed does not install `@playwright/test`, which a generated spec imports.
 
 ### Changed
 

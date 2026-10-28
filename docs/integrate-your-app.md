@@ -2,34 +2,72 @@
 
 This is the path to a minimized scenario on an application you run locally. ReproSeed does not install reset hooks into an existing app. The application has to opt in.
 
-The published npm release is `0.1.0`. That package does not include `doctor`, `init`, or `--trace`. This guide is for the `0.2.0` candidate in this repository. `--version` remains `0.1.0` until that release is published. `reproseed doctor --help` is how you tell those commands are present.
-
-You do not need a git checkout to run the CLI. The example servers in this repository are a separate matter: they are not in the npm package.
-
-## Install the package
-
 Requirements: Node.js 22 or newer, and npm. Tested on macOS and on GitHub-hosted Ubuntu with Node.js 22. Windows is not tested.
 
-```bash
-npm install reproseed
-npx playwright install --with-deps --no-shell chromium
-npx reproseed --help
-npx reproseed doctor --help
-```
+Example servers, including `examples/opt-in-ticket`, are in this git repository. They are not in the npm package. Commands for an installed package use `npx reproseed`. `node dist/cli.js` appears only in the source-checkout section and in the checkout worked example.
 
 `--no-shell` skips `chrome-headless-shell`. The browser ReproSeed launches is Playwright `1.64.1`'s downloaded Chromium, `channel: "chromium"`, not system Chrome.
 
-This guide is shipped at `node_modules/reproseed/docs/integrate-your-app.md`. [docs/trace-evidence.md](trace-evidence.md) is beside it. The same files are on GitHub at `main`, which can be newer than the package you installed.
+```bash
+npx playwright install --with-deps --no-shell chromium
+```
 
-`npm install reproseed` installs Playwright `1.64.1` for the CLI. It does not install `@playwright/test`. A generated spec imports `@playwright/test`. Install that package yourself when you want to run the spec:
+None of the installs below add `@playwright/test`. A generated spec imports it. Install that package yourself when you want to run the spec:
 
 ```bash
 npm install --save-dev @playwright/test@1.64.1
 ```
 
+## Published 0.1.0
+
+```bash
+npm install reproseed@0.1.0
+npx reproseed --help
+npx reproseed --version
+npx reproseed minimize --help
+```
+
+`0.1.0` can `minimize` a scenario and write a regression test. `doctor`, `init`, and `--trace` are not in that package. `npx reproseed doctor --help` fails on `0.1.0` because there is no `doctor` command. This guide and [trace-evidence.md](trace-evidence.md) are not files in that package.
+
+`npm install reproseed` with no version installs the latest published release. Until `0.2.0` is published, that is `0.1.0`.
+
+## Unreleased 0.2.0 candidate
+
+Pack this repository. Install that tarball in a different directory. `npm install reproseed` does not install this candidate.
+
+```bash
+npm pack
+mkdir ../reproseed-consumer
+cd ../reproseed-consumer
+npm init -y
+npm install /absolute/path/reproseed-0.1.0.tgz
+npx reproseed --help
+npx reproseed init --help
+npx reproseed doctor --help
+npx reproseed minimize --help
+```
+
+`--version` prints `0.1.0`. `init`, `doctor`, and `--trace` are present. This guide is `node_modules/reproseed/docs/integrate-your-app.md`. [trace-evidence.md](trace-evidence.md) is beside it. The example servers are not in the tarball.
+
+## Published 0.2.0, after release
+
+`0.2.0` is not on npm yet. After the owner publishes it:
+
+```bash
+npm install reproseed@0.2.0
+npx reproseed --version
+npx reproseed init --help
+npx reproseed doctor --help
+npx reproseed minimize --help
+```
+
+`--version` prints `0.2.0`. The commands and the two guides match the candidate. Example servers are still not in the package. From then on, `npm install reproseed` with no version installs `0.2.0`.
+
+The rest of this guide uses `npx reproseed` for those two packages. Skip `init`, `doctor`, and `--trace` when the installed package is `0.1.0`.
+
 ## Install from a checkout
 
-Use this when you are changing ReproSeed, or when you want the example servers.
+Use this when you are changing ReproSeed, or when you want the example servers. `node dist/cli.js` is the CLI built in this checkout.
 
 ```bash
 git clone https://github.com/raimbekalish/reproseed.git
@@ -40,15 +78,17 @@ npm run build
 node dist/cli.js --help
 ```
 
-A checkout already has `@playwright/test` as a dev dependency at `1.64.1`.
+A checkout already has `@playwright/test` as a dev dependency at `1.64.1`. The built CLI includes `init`, `doctor`, and `--trace`. `--version` prints `0.1.0` until `0.2.0` is published.
 
 ## Create a scenario
 
 `init` writes one JSON file. It does not start your application and it does not put a reset credential in the file.
 
 ```bash
-node dist/cli.js init scenario.json --oracle record-count
+npx reproseed init scenario.json --oracle record-count
 ```
+
+Published `0.1.0` does not provide `init`. The command above is the candidate tarball and, after publication, `reproseed@0.2.0`. In a source checkout the same command is `node dist/cli.js init scenario.json --oracle record-count`.
 
 `--oracle dom-text` writes the other supported failure type. The default path is `scenario.json`. An existing file is left unchanged unless you pass `--force`. The path has to stay inside the current directory, end in `.json`, and must not be a symlink.
 
@@ -101,7 +141,7 @@ Start the application with the same app id and credential. Loopback by itself is
 
 ## Worked example
 
-`examples/opt-in-ticket` is a small Node server with no extra dependencies. It does not import the duplicate-submit or stale-search demos. It is in this git repository. It is not in the npm package. The checked-in demo servers are also not in the npm package.
+This example runs from a source checkout. `examples/opt-in-ticket` is a small Node server with no extra dependencies. It does not import the duplicate-submit or stale-search demos. It is in this git repository. It is not in the npm package. The checked-in demo servers are also not in the npm package.
 
 The page files a ticket on `#file`. A second click while the first `POST /api/tickets` is still in flight files another ticket. A 400ms guard ignores only an immediate double-click. The scenario waits 800ms and delays that POST by 2000ms, so both clicks are accepted. The intended count is 1. The note field is a decoy.
 
@@ -124,7 +164,15 @@ export REPROSEED_ORIGIN=http://127.0.0.1:4030
 
 ## Check without resetting
 
-From an installed package, the command is `npx reproseed`. The `node dist/cli.js` form below is a checkout of this repository. `examples/opt-in-ticket` is in the repository and is not in the npm package.
+`doctor` is in the candidate tarball and in published `0.2.0`. It is not in published `0.1.0`.
+
+For your own scenario file, from the directory where you installed the package:
+
+```bash
+npx reproseed doctor scenario.json
+```
+
+The next command is a source checkout. `examples/opt-in-ticket` is in the repository and is not in the npm package.
 
 `doctor` reads the scenario and, when the origin is authorized loopback, sends GET requests only. It does not send `POST /__reproseed/reset`. It does not launch a browser. It does not follow redirects. It does not print the credential or record values.
 
@@ -149,7 +197,17 @@ A passing doctor run can still be followed by a failed minimize when the applica
 
 ## Minimize
 
-`minimize` does reset the application. Run one minimization at a time.
+`minimize` does reset the application. Run one minimization at a time. This command exists in published `0.1.0`, in the candidate tarball, and in published `0.2.0`. `--trace` exists only in the candidate and in `0.2.0`.
+
+From the directory where you installed the package:
+
+```bash
+npx reproseed minimize scenario.json \
+  --report artifacts/report.json \
+  --spec artifacts/ticket.spec.ts
+```
+
+This checkout command uses the example server, which is not in the npm package:
 
 ```bash
 node dist/cli.js minimize examples/opt-in-ticket/scenario.json \

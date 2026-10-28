@@ -12,7 +12,16 @@ import { startOptInServer } from "../../examples/opt-in-ticket/server.ts";
 import { EXIT } from "../../src/cli/errors.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
 import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
-import { browserPids, leakedProcessNote } from "../process-snapshot.ts";
+import {
+  BROWSER_PROCESS_PATTERN,
+  killableOwnedBrowser,
+  leakedProcessNote,
+  listProcessTree,
+  parseProcessTree,
+  processCommand,
+  splitNewBrowserPids,
+  type BrowserLeakSplit,
+} from "../process-snapshot.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const APP_ID = "opt-in-ticket";
@@ -34,8 +43,8 @@ describe("fresh consumer install", { concurrency: false }, () => {
     const work = join(root, "app");
     await mkdir(work);
     const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
-    const before = await browserPids();
-    let leaked: number[] = [];
+    const before = browserPidsIn(parseProcessTree(await listProcessTree()));
+    let leaks: BrowserLeakSplit = { owned: [], suspected: [] };
     let fixed: Awaited<ReturnType<typeof startOptInServer>> | undefined;
     try {
       const tarball = await pack(root);
@@ -157,19 +166,31 @@ export default defineConfig({
     } finally {
       await server.close();
       await fixed?.close();
-      leaked = await waitForBrowsers(before);
-      for (const pid of leaked) {
+      stopTrackedChildren();
+      leaks = await waitForOwnedBrowsers(before, process.pid);
+      for (const pid of leaks.owned) {
+        const args = await processCommand(pid);
+        if (!killableOwnedBrowser(pid, args)) {
+          continue;
+        }
         try {
           process.kill(pid, "SIGKILL");
         } catch {
-          // The process already exited.
+          // The process already exited, or it is not ours to signal.
         }
+      }
+      if (leaks.suspected.length > 0) {
+        console.log(
+          `Suspected browser processes were left running because ownership was not established:\n${await leakedProcessNote(leaks.suspected)}`,
+        );
       }
       await rm(root, { recursive: true, force: true });
     }
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 });
+
+const trackedChildren = new Set<ChildProcess>();
 
 async function pack(root: string): Promise<string> {
   const packed = await command("npm", ["pack", "--json", "--pack-destination", root], REPO, 120_000);
@@ -209,6 +230,7 @@ function run(
   timeout = 30_000,
 ): Promise<{ code: number; output: string }> {
   const child = spawn(bin, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  trackChild(child);
   return new Promise((resolve, reject) => {
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -254,6 +276,7 @@ async function openTraceViewer(playwrightCli: string, zipPath: string): Promise<
     env: { ...cleanEnv(), PWTEST_UNDER_TEST: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  trackChild(child);
   let output = "";
   let settled = false;
   try {
@@ -339,6 +362,20 @@ function httpRequest(target: string): Promise<{ status: number; headers: Incomin
   });
 }
 
+function trackChild(child: ChildProcess): void {
+  trackedChildren.add(child);
+  child.once("close", () => {
+    trackedChildren.delete(child);
+  });
+}
+
+function stopTrackedChildren(): void {
+  for (const child of trackedChildren) {
+    stopChild(child);
+  }
+  trackedChildren.clear();
+}
+
 function stopChild(child: ChildProcess): void {
   const pid = child.pid;
   if (pid !== undefined && pid > 1) {
@@ -352,15 +389,23 @@ function stopChild(child: ChildProcess): void {
   child.stderr?.destroy();
 }
 
-async function waitForBrowsers(before: Set<number>): Promise<number[]> {
-  let leaked: number[] = [];
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const after = await browserPids();
-    leaked = [...after].filter((pid) => !before.has(pid));
-    if (leaked.length === 0) {
-      return [];
-    }
+function browserPidsIn(records: ReturnType<typeof parseProcessTree>): Set<number> {
+  return new Set(
+    records
+      .filter((record) => record.pid > 1 && BROWSER_PROCESS_PATTERN.test(record.args))
+      .map((record) => record.pid),
+  );
+}
+
+async function waitForOwnedBrowsers(before: Set<number>, rootPid: number): Promise<BrowserLeakSplit> {
+  let split = await readBrowserLeaks(before, rootPid);
+  for (let attempt = 0; attempt < 60 && split.owned.length > 0; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 250));
+    split = await readBrowserLeaks(before, rootPid);
   }
-  return leaked;
+  return split;
+}
+
+async function readBrowserLeaks(before: Set<number>, rootPid: number): Promise<BrowserLeakSplit> {
+  return splitNewBrowserPids(parseProcessTree(await listProcessTree()), before, rootPid);
 }
