@@ -186,7 +186,10 @@ export function directChildPid(pid: number | undefined, runnerPid: number): numb
   return pid;
 }
 
-/** Signals one direct child. Returns false when the pid is not safe to signal. */
+/**
+ * Pure pid check used by unit tests. It does not signal anything.
+ * Cleanup of a spawned child goes through `stopDirectChild`, which uses that child's own `kill`.
+ */
 export function signalDirectChild(pid: number | undefined, runnerPid: number, signal: (pid: number) => void): boolean {
   const target = directChildPid(pid, runnerPid);
   if (target === undefined) {
@@ -196,21 +199,44 @@ export function signalDirectChild(pid: number | undefined, runnerPid: number, si
   return true;
 }
 
-/** Stops a child this test spawned. Does not signal a process group or any other pid. */
-export function stopDirectChild(child: {
+type DirectChild = {
   pid?: number;
+  killed?: boolean;
+  exitCode?: number | null;
+  signalCode?: NodeJS.Signals | null;
+  kill?: (signal?: NodeJS.Signals) => boolean;
   stdout?: { destroy(): void } | null;
   stderr?: { destroy(): void } | null;
-}): void {
-  try {
-    signalDirectChild(child.pid, process.pid, (pid) => {
-      process.kill(pid, "SIGKILL");
-    });
-  } catch {
-    // The child already exited.
+};
+
+/**
+ * Stops a child this test spawned by calling that handle's `kill`.
+ * A numeric pid is not signalled here: after exit the operating system can reuse it.
+ * An exited, already signalled, or closed child is left alone. Pid 0, pid 1, a
+ * negative process-group id, and the test runner are not passed to `kill`.
+ * Returns whether the handle accepted the signal.
+ */
+export function stopDirectChild(child: DirectChild): boolean {
+  let signaled = false;
+  const closed = child.killed === true || child.exitCode != null || child.signalCode != null;
+  if (!closed && typeof child.kill === "function" && directChildPid(child.pid, process.pid) !== undefined) {
+    try {
+      signaled = child.kill("SIGKILL") === true;
+    } catch {
+      signaled = false;
+    }
   }
-  child.stdout?.destroy();
-  child.stderr?.destroy();
+  destroyStream(child.stdout);
+  destroyStream(child.stderr);
+  return signaled;
+}
+
+function destroyStream(stream: { destroy(): void } | null | undefined): void {
+  try {
+    stream?.destroy();
+  } catch {
+    // The stream is already closed.
+  }
 }
 
 export function browserPidSet(records: readonly ProcessRecord[]): Set<number> {

@@ -141,32 +141,83 @@ describe("process snapshots", () => {
     assert.equal(directChildPid(1, 10), undefined);
   });
 
-  it("cleans up a direct child after it exits", async () => {
+  it("stops a live direct child through its handle", async () => {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+    try {
+      await once(child, "spawn");
+      assert.equal(stopDirectChild(child), true);
+      assert.equal(child.killed, true);
+      assert.equal(stopDirectChild(child), false);
+      await once(child, "exit");
+      assert.equal(await processCommand(child.pid ?? 0), undefined);
+    } finally {
+      stopDirectChild(child);
+    }
+  });
+
+  it("leaves a child that already exited", async () => {
     const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
     await once(child, "exit");
-    stopDirectChild(child);
+    assert.equal(stopDirectChild(child), false);
     assert.equal(await processCommand(child.pid ?? 0), undefined);
   });
 
-  it("cleans up a direct child after a failure and does not record an unrelated pid", async () => {
+  it("accepts a child whose kill method returns false", () => {
+    const destroyed: string[] = [];
+    const child = {
+      pid: 42,
+      kill() {
+        return false;
+      },
+      stdout: { destroy() { destroyed.push("stdout"); } },
+      stderr: { destroy() { destroyed.push("stderr"); } },
+    };
+    assert.equal(stopDirectChild(child), false);
+    assert.deepEqual(destroyed, ["stdout", "stderr"]);
+  });
+
+  it("does not signal an invalid or absent pid", () => {
+    for (const pid of [undefined, 0, 1, -15, process.pid]) {
+      let called = false;
+      assert.equal(
+        stopDirectChild({
+          pid,
+          kill() {
+            called = true;
+            return true;
+          },
+        }),
+        false,
+      );
+      assert.equal(called, false);
+    }
+  });
+
+  it("stops a direct child after an exception without a raw pid signal", async () => {
     const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
-    await once(child, "spawn");
-    const owned = child.pid;
-    assert.equal(typeof owned, "number");
-    const signaled: number[] = [];
+    const raw: number[] = [];
+    const original = process.kill;
+    process.kill = ((pid: number, signal?: NodeJS.Signals | number) => {
+      raw.push(pid);
+      return original.call(process, pid, signal);
+    }) as typeof process.kill;
     let failed = false;
     try {
-      throw new Error("assertion failed");
-    } catch {
-      failed = true;
-      assert.equal(signalDirectChild(owned, process.pid, (pid) => signaled.push(pid)), true);
-      assert.equal(signalDirectChild(1, process.pid, (pid) => signaled.push(pid)), false);
+      await once(child, "spawn");
+      try {
+        throw new Error("assertion failed");
+      } catch {
+        failed = true;
+        assert.equal(stopDirectChild(child), true);
+      }
+      await once(child, "exit");
+    } finally {
+      process.kill = original;
       stopDirectChild(child);
     }
     assert.equal(failed, true);
-    assert.deepEqual(signaled, [owned]);
-    await once(child, "exit");
-    assert.equal(await processCommand(owned ?? 0), undefined);
+    assert.deepEqual(raw, []);
+    assert.equal(stopDirectChild.toString().includes("process.kill"), false);
   });
 });
 
