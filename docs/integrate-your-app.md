@@ -29,30 +29,13 @@ npx reproseed minimize --help
 
 `0.1.0` can `minimize` a scenario and write a regression test. `doctor`, `init`, and `--trace` are not in that package. `npx reproseed doctor --help` fails on `0.1.0` because there is no `doctor` command. This guide and [trace-evidence.md](trace-evidence.md) are not files in that package.
 
-`npm install reproseed` with no version installs the latest published release. Until `0.2.0` is published, that is `0.1.0`.
+`npm install reproseed` with no version installs the latest published release. Confirm it with `npm view reproseed version`.
 
-## Unpublished 0.2.0 candidate
+## Version 0.2.0
 
-Pack this repository. Install that tarball in a different directory. `npm install reproseed` does not install this candidate. While `package.json` is `0.2.0`, `npm pack` names the file `reproseed-0.2.0.tgz`.
+This package is version `0.2.0`. `--version` prints `0.2.0`. `init`, `doctor`, and `--trace` are present. This guide is `node_modules/reproseed/docs/integrate-your-app.md`. [trace-evidence.md](trace-evidence.md) is beside it. The example servers are not in the package.
 
-```bash
-npm pack
-mkdir ../reproseed-consumer
-cd ../reproseed-consumer
-npm init -y
-npm install /absolute/path/reproseed-0.2.0.tgz
-npx reproseed --version
-npx reproseed --help
-npx reproseed init --help
-npx reproseed doctor --help
-npx reproseed minimize --help
-```
-
-`--version` prints `0.2.0`. `init`, `doctor`, and `--trace` are present. This guide is `node_modules/reproseed/docs/integrate-your-app.md`. [trace-evidence.md](trace-evidence.md) is beside it. The example servers are not in the tarball. Printing `0.2.0` here does not mean the registry serves `0.2.0`.
-
-## Published 0.2.0, after release
-
-`0.2.0` is not on npm yet. After the owner publishes it:
+From the registry, after `npm view reproseed@0.2.0 version` prints `0.2.0`:
 
 ```bash
 npm install reproseed@0.2.0
@@ -62,9 +45,9 @@ npx reproseed doctor --help
 npx reproseed minimize --help
 ```
 
-`--version` prints `0.2.0`. The commands and the two guides match the candidate. Example servers are still not in the package. From then on, `npm install reproseed` with no version installs `0.2.0`.
+Before that check succeeds, pack this repository. While `package.json` is `0.2.0`, `npm pack` names the file `reproseed-0.2.0.tgz`. Install that file in another directory. Printing `0.2.0` from that install identifies this package. It does not show that the registry serves `0.2.0`. When the registry reports `0.2.0` as latest, `npm install reproseed` with no version installs this release.
 
-The rest of this guide uses `npx reproseed` for those two packages. Skip `init`, `doctor`, and `--trace` when the installed package is `0.1.0`.
+The rest of this guide uses `npx reproseed` for version `0.2.0`. Skip `init`, `doctor`, and `--trace` when the installed package is `0.1.0`.
 
 ## Install from a checkout
 
@@ -79,7 +62,7 @@ npm run build
 node dist/cli.js --help
 ```
 
-A checkout already has `@playwright/test` as a dev dependency at `1.64.1`. The built CLI includes `init`, `doctor`, and `--trace`. On this candidate, `--version` prints `0.2.0`. The registry's unversioned install is still published `0.1.0`.
+A checkout already has `@playwright/test` as a dev dependency at `1.64.1`. The built CLI includes `init`, `doctor`, and `--trace`. `--version` prints `0.2.0`. `npm install reproseed` from the registry installs the latest published version. Confirm that version with `npm view reproseed version`.
 
 ## Create a scenario
 
@@ -89,7 +72,7 @@ A checkout already has `@playwright/test` as a dev dependency at `1.64.1`. The b
 npx reproseed init scenario.json --oracle record-count
 ```
 
-Published `0.1.0` does not provide `init`. The command above is the candidate tarball and, after publication, `reproseed@0.2.0`. In a source checkout the same command is `node dist/cli.js init scenario.json --oracle record-count`.
+Published `0.1.0` does not provide `init`. Version `0.2.0` does. In a source checkout the same command is `node dist/cli.js init scenario.json --oracle record-count`.
 
 `--oracle dom-text` writes the other supported failure type. The default path is `scenario.json`. An existing file is left unchanged unless you pass `--force`. The path has to stay inside the current directory, end in `.json`, and must not be a symlink.
 
@@ -165,7 +148,7 @@ export REPROSEED_ORIGIN=http://127.0.0.1:4030
 
 ## Check without resetting
 
-`doctor` is in the candidate tarball and in published `0.2.0`. It is not in published `0.1.0`.
+`doctor` is in version `0.2.0`. It is not in published `0.1.0`.
 
 For your own scenario file, from the directory where you installed the package:
 
@@ -198,7 +181,7 @@ A passing doctor run can still be followed by a failed minimize when the applica
 
 ## Minimize
 
-`minimize` does reset the application. Run one minimization at a time. This command exists in published `0.1.0`, in the candidate tarball, and in published `0.2.0`. `--trace` exists only in the candidate and in `0.2.0`.
+`minimize` does reset the application. Run one minimization at a time. This command exists in published `0.1.0` and in version `0.2.0`. `--trace` exists in version `0.2.0` and is absent from published `0.1.0`.
 
 From the directory where you installed the package:
 
