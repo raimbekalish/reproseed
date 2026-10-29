@@ -2,7 +2,7 @@
 
 ReproSeed is a local command-line tool. You give it a failing scenario for an authorized loopback test application. It deletes steps that are not required for that failure, then writes a Playwright regression test for the steps that remain.
 
-The published release is `0.1.0`, released October 25, 2026. This repository is preparing `0.2.0`. `package.json` stays at `0.1.0`, and `reproseed --version` prints `0.1.0`, until that release is published. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
+The published npm release is `0.1.0`, released October 25, 2026. This repository's `package.json` is the unpublished `0.2.0` candidate, so a checkout and a tarball packed from it print `0.2.0`. `npm install reproseed` from the registry still installs `0.1.0`. `0.2.0` is not on npm yet. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
 
 ## Install
 
@@ -33,16 +33,17 @@ npx reproseed minimize --help
 
 `npm install reproseed` with no version installs the latest published release. Until `0.2.0` is published, that is `0.1.0`.
 
-### Unreleased 0.2.0 candidate
+### Unpublished 0.2.0 candidate
 
-This candidate is the tarball packed from this repository. It is not what `npm install reproseed` installs from the registry. `--version` still prints `0.1.0`.
+This candidate is a checkout of this repository, or the tarball `npm pack` writes from it. It is not what `npm install reproseed` installs from the registry. While `package.json` is `0.2.0`, `npm pack` names the file `reproseed-0.2.0.tgz`. `--version` prints `0.2.0`.
 
 ```bash
 npm pack
 mkdir ../reproseed-consumer
 cd ../reproseed-consumer
 npm init -y
-npm install /absolute/path/reproseed-0.1.0.tgz
+npm install /absolute/path/reproseed-0.2.0.tgz
+npx reproseed --version
 npx reproseed --help
 npx reproseed init --help
 npx reproseed doctor --help
@@ -303,7 +304,7 @@ Package check, without publishing:
 npm run test:package
 ```
 
-That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help`, `reproseed --version`, `reproseed init`, and `reproseed doctor` must run from that install. `--version` prints `0.1.0`. The tarball contains `LICENSE`, `dist/` (including the embedded `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` assets), this README, and the two original example scenario files. It does not contain credentials, `.env` files, `artifacts/`, test results, `node_modules`, the TypeScript source tree, or `examples/opt-in-ticket`.
+That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help`, `reproseed --version`, `reproseed init`, and `reproseed doctor` must run from that install. `--version` prints the candidate version, `0.2.0`. The tarball contains `LICENSE`, `dist/` (including the embedded `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` assets), this README, `docs/integrate-your-app.md`, `docs/trace-evidence.md`, and the two original example scenario files. It does not contain credentials, `.env` files, `artifacts/`, test results, `node_modules`, the TypeScript source tree, or `examples/opt-in-ticket`.
 
 ## Continuous integration
 
@@ -321,4 +322,4 @@ A new push to the same pull request cancels the previous run. The badge shows th
 
 ## Release status
 
-`0.1.0` (October 25, 2026) is the first release. `package.json` sets `license` to `MIT` and does not set `private`. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) and [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md) describe this version. There are no earlier releases. Do not publish or tag from a pull request.
+`0.1.0` (October 25, 2026) is the published release. `package.json` in this repository is `0.2.0` and does not set `private`. That version is the unpublished candidate. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) and [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md) describe `0.1.0`. [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md) describes the candidate and has no publication date. There are no earlier releases. Do not publish or tag from a pull request.

@@ -1,6 +1,6 @@
 # Security policy
 
-ReproSeed resets and drives a local test application. The rules below are the product's safety boundary. Version 0.1.0, released October 25, 2026, is the supported release.
+ReproSeed resets and drives a local test application. The rules below are the product's safety boundary. Version 0.1.0, released October 25, 2026, is the supported published release. The `0.2.0` candidate in this repository is not published and is not the supported release until the owner publishes it.
 
 ## Authorized targets
 
@@ -42,10 +42,11 @@ Production targets are unsupported. The tool has no model for production account
 
 | Version | Supported |
 | --- | --- |
-| 0.1.0, released October 25, 2026 | Yes |
+| 0.1.0, released October 25, 2026 | Yes. This is the published release. |
+| 0.2.0 candidate in this repository | No. It is not on npm. It becomes the supported release only after the owner publishes it. |
 | Older commits | No |
 
-0.1.0 is the first published release. There is no earlier supported version. `0.2.0` is not published. Security fixes apply to the published release. The `0.1.0` procedure is [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md). The unpublished candidate checks are [docs/v0.2.0-release-checklist.md](docs/v0.2.0-release-checklist.md).
+0.1.0 is the first published release. There is no earlier supported version. Security fixes for people who installed from npm apply to `0.1.0` until `0.2.0` is published. The `0.1.0` procedure is [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md). That runbook's tag-then-publish order is historical. The unpublished candidate checks, which publish before tagging, are [docs/v0.2.0-release-checklist.md](docs/v0.2.0-release-checklist.md).
 
 ## Reporting a vulnerability
 

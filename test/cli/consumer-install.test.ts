@@ -21,6 +21,7 @@ import {
 } from "../process-snapshot.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
+const VERSION = (JSON.parse(await readFile(join(REPO, "package.json"), "utf8")) as { version: string }).version;
 const APP_ID = "opt-in-ticket";
 const TRACE_LISTING = `
 import sys, zipfile
@@ -54,8 +55,11 @@ describe("fresh consumer install", { concurrency: false }, () => {
       assert.equal(relative(REPO, cliFile).startsWith(".."), true);
       assert.equal(cliFile.startsWith(installed), true);
       const packed = JSON.parse(await readFile(join(installed, "package.json"), "utf8")) as {
+        version?: string;
         dependencies?: Record<string, string>;
       };
+      assert.equal(VERSION, "0.2.0");
+      assert.equal(packed.version, "0.2.0");
       assert.equal(packed.dependencies?.playwright, "1.64.1");
       assert.equal(packed.dependencies?.["@playwright/test"], undefined);
       await access(join(installed, "docs/integrate-your-app.md"));
@@ -67,7 +71,7 @@ describe("fresh consumer install", { concurrency: false }, () => {
 
       const version = await run(cli, ["--version"], work, cleanEnv());
       assert.equal(version.code, 0, version.output);
-      assert.match(version.output, /0\.1\.0/);
+      assert.equal(version.output.trim(), "0.2.0");
       const help = await run(cli, ["--help"], work, cleanEnv());
       assert.equal(help.code, 0, help.output);
       assert.match(help.output, /doctor/);
@@ -180,8 +184,8 @@ async function pack(root: string): Promise<string> {
   const end = packed.output.lastIndexOf("]");
   const rows = JSON.parse(packed.output.slice(start, end + 1)) as Array<{ filename: string }>;
   const filename = rows[0]?.filename;
-  if (filename === undefined) {
-    throw new Error(`npm pack did not name a tarball\n${packed.output}`);
+  if (filename !== `reproseed-${VERSION}.tgz`) {
+    throw new Error(`npm pack named ${filename ?? "nothing"}, expected reproseed-${VERSION}.tgz\n${packed.output}`);
   }
   return join(root, filename);
 }

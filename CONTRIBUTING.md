@@ -102,7 +102,7 @@ Use the pull-request template. In the description, say what behavior changed and
 - Preserve failure signatures, the five final verification replays, loopback reset rules, and the current CLI contract unless the pull request is explicitly about one of those and says so.
 - CI on the pull-request head has to pass before the change is ready. The three jobs are Quality and build, Chromium integration, and Package smoke verification.
 - Do not publish to npm, create a GitHub Release, or push a git tag from a contribution.
-- Leave version `0.1.0` unchanged. Do not publish, tag, or create a GitHub Release from a contribution. Publication remains the owner's step in [docs/publish-runbook.md](docs/publish-runbook.md).
+- The release candidate sets version `0.2.0` in `package.json`. Do not publish, tag, or create a GitHub Release from a contribution. Publication remains the owner's step in [docs/v0.2.0-release-checklist.md](docs/v0.2.0-release-checklist.md). [docs/publish-runbook.md](docs/publish-runbook.md) is the historical record of `0.1.0` and is not the procedure for `0.2.0`.
 
 ## Coding and testing
 
