@@ -8,7 +8,7 @@ Nothing is queued past the 0.2.0 candidate.
 
 ## [0.2.0] - pending publication
 
-Pending publication. The date is filled in when the owner publishes. This section is not a claim that `0.2.0` is on npm. Published `0.1.0` does not include `init`, `doctor`, `--trace`, or the two guides. The notes are [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md).
+Pending publication. The date is added later, in a release-finalization commit. That commit is packed and published only after its own push-triggered CI succeeds. This section is not a claim that `0.2.0` is on npm. Published `0.1.0` does not include `init`, `doctor`, `--trace`, or the two guides. The notes are [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md).
 
 ### Added
 
