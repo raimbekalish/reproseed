@@ -10,6 +10,14 @@ import { launchChromium } from "../../src/runner/session.ts";
 import { startSearchServer, type SearchServer } from "../../examples/stale-search/server.ts";
 
 const APP_ID = "stale-search";
+const DELAY_GAP_MS = 500;
+const DELAY_CEILING_MS = 4_000;
+
+type DelayReading = {
+  elapsed: number;
+  getHits: number;
+  postHits: number;
+};
 const SCENARIO = fileURLToPath(new URL("../../examples/stale-search/scenario.json", import.meta.url));
 const STALE_SIGNATURE = {
   oracleId: "dom-text" as const,
@@ -113,58 +121,90 @@ describe("stale search replay", { concurrency: false }, () => {
     try {
       const context = await browser.newContext();
       await installOriginGuard(context, demo.origin);
+      let getHits = 0;
+      let postHits = 0;
       const getDelay = await installMatchedResponseDelay(context, {
         origin: demo.origin,
         urlIncludes: "/api/search?q=alpha",
         method: "GET",
         ms: 700,
+        onDelayed: () => {
+          getHits += 1;
+        },
       });
       const postDelay = await installMatchedResponseDelay(context, {
         origin: demo.origin,
         urlIncludes: "/api/post-probe",
         method: "POST",
         ms: 700,
+        onDelayed: () => {
+          postHits += 1;
+        },
       });
       const page = await context.newPage();
+      const sample = async (path: string, method: "GET" | "POST", body?: string): Promise<DelayReading> => {
+        const before = { getHits, postHits };
+        const elapsed = await page.evaluate(
+          async (request: { path: string; method: string; body?: string }) => {
+            const started = performance.now();
+            const response = await fetch(request.path, {
+              method: request.method,
+              ...(request.body !== undefined
+                ? { headers: { "content-type": "application/json" }, body: request.body }
+                : {}),
+            });
+            await response.text();
+            return performance.now() - started;
+          },
+          { path, method, body },
+        );
+        return { elapsed, getHits: getHits - before.getHits, postHits: postHits - before.postHits };
+      };
       const navigationStarted = Date.now();
       await page.goto(demo.origin, { waitUntil: "domcontentloaded" });
-      assert.ok(Date.now() - navigationStarted < 400, "page GET was delayed");
-      const times = await page.evaluate(async () => {
-        const timed = async (path: string, method: string, body?: string): Promise<number> => {
+      const navigationMs = Date.now() - navigationStarted;
+      assert.equal(getHits, 0, `page navigation matched the GET delay after ${navigationMs}ms`);
+      assert.equal(postHits, 0, `page navigation matched the POST delay after ${navigationMs}ms`);
+
+      const identity = await sample("/__reproseed/identity", "GET");
+      const home = await sample("/", "GET");
+      const beta = await sample("/api/search?q=beta", "GET");
+      const history = await sample("/api/search-history", "GET");
+      const alphabet = await sample("/api/search?q=alphabet", "GET");
+      for (const [label, reading] of [
+        ["identity", identity],
+        ["home", home],
+        ["beta", beta],
+        ["history", history],
+        ["alphabet", alphabet],
+      ] as const) {
+        assertUntouched(label, reading);
+      }
+      const undelayed = Math.max(identity.elapsed, home.elapsed, beta.elapsed, history.elapsed, alphabet.elapsed);
+      const alpha = await sample("/api/search?q=alpha", "GET");
+      const post = await sample("/api/post-probe", "POST", JSON.stringify({ email: "a@example.com", note: "n" }));
+      assertDelayed("alpha", alpha, "GET", undelayed);
+      assertDelayed("post", post, "POST", undelayed);
+
+      const parallelBefore = { getHits, postHits };
+      const parallel = await page.evaluate(async () => {
+        const timed = async (path: string): Promise<number> => {
           const started = performance.now();
-          const response = await fetch(path, {
-            method,
-            ...(body !== undefined ? { headers: { "content-type": "application/json" }, body } : {}),
-          });
+          const response = await fetch(path);
           await response.text();
           return performance.now() - started;
         };
-        const identity = await timed("/__reproseed/identity", "GET");
-        const home = await timed("/", "GET");
-        const beta = await timed("/api/search?q=beta", "GET");
-        const records = await timed("/api/search-history", "GET");
-        const alphabet = await timed("/api/search?q=alphabet", "GET");
-        const alpha = await timed("/api/search?q=alpha", "GET");
-        const post = await timed("/api/post-probe", "POST", JSON.stringify({ email: "a@example.com", note: "n" }));
-        const [parallelBeta, parallelAlpha] = await Promise.all([
-          timed("/api/search?q=beta", "GET"),
-          timed("/api/search?q=alpha", "GET"),
-        ]);
-        return { identity, home, beta, records, alphabet, alpha, post, parallelBeta, parallelAlpha };
+        const [betaMs, alphaMs] = await Promise.all([timed("/api/search?q=beta"), timed("/api/search?q=alpha")]);
+        return { betaMs, alphaMs };
       });
-      for (const [label, value] of [
-        ["identity", times.identity],
-        ["home", times.home],
-        ["beta", times.beta],
-        ["history", times.records],
-        ["alphabet", times.alphabet],
-        ["parallel beta", times.parallelBeta],
-      ] as const) {
-        assert.ok(value < 400, `${label} took ${value}ms`);
-      }
-      assert.ok(times.alpha >= 600 && times.alpha < 1_400, `alpha took ${times.alpha}ms`);
-      assert.ok(times.post >= 600 && times.post < 1_400, `post took ${times.post}ms`);
-      assert.ok(times.parallelAlpha >= 600 && times.parallelAlpha < 1_400, `parallel alpha took ${times.parallelAlpha}ms`);
+      assert.equal(getHits - parallelBefore.getHits, 1, `parallel GET delay hits, beta ${parallel.betaMs}ms alpha ${parallel.alphaMs}ms`);
+      assert.equal(postHits - parallelBefore.postHits, 0, "parallel searches matched the POST delay");
+      assert.ok(
+        parallel.alphaMs >= parallel.betaMs + DELAY_GAP_MS,
+        `parallel alpha ${parallel.alphaMs}ms was not ${DELAY_GAP_MS}ms slower than beta ${parallel.betaMs}ms`,
+      );
+      assert.ok(parallel.alphaMs < DELAY_CEILING_MS, `parallel alpha took ${parallel.alphaMs}ms`);
+
       const disposeStarted = Date.now();
       await getDelay.dispose();
       await postDelay.dispose();
@@ -198,6 +238,22 @@ function withOracle(scenario: Scenario, selector: string, steps: Step[]): Scenar
     ...replaceSteps(scenario, steps),
     oracle: { id: "dom-text", selector, expect: "Results for beta" },
   };
+}
+
+function assertUntouched(label: string, reading: DelayReading): void {
+  assert.equal(reading.getHits, 0, `${label} matched the GET delay after ${reading.elapsed}ms`);
+  assert.equal(reading.postHits, 0, `${label} matched the POST delay after ${reading.elapsed}ms`);
+}
+
+function assertDelayed(label: string, reading: DelayReading, kind: "GET" | "POST", undelayedMs: number): void {
+  assert.equal(reading.getHits, kind === "GET" ? 1 : 0, `${label} GET hits ${reading.getHits} in ${reading.elapsed}ms`);
+  assert.equal(reading.postHits, kind === "POST" ? 1 : 0, `${label} POST hits ${reading.postHits} in ${reading.elapsed}ms`);
+  const floor = undelayedMs + DELAY_GAP_MS;
+  assert.ok(
+    reading.elapsed >= floor,
+    `${label} took ${reading.elapsed}ms; undelayed requests took up to ${undelayedMs}ms`,
+  );
+  assert.ok(reading.elapsed < DELAY_CEILING_MS, `${label} took ${reading.elapsed}ms`);
 }
 
 function assertRunner(outcome: ExecutionOutcome, code: "RUNNER_ERROR" | "RESET_FAILED", pattern: RegExp): void {
