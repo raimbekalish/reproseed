@@ -21,7 +21,7 @@ import { writePlaywrightTest } from "../../src/export/playwright.ts";
 import { minimizeWithBrowser } from "../../src/runner/minimize-browser.ts";
 import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
 import type { FetchLike } from "../../src/runner/reset.ts";
-import { browserPids, browserProcessNote, leakedProcessNote } from "../process-snapshot.ts";
+import { browserProcessNote, browserSnapshot, finishBrowserCleanup, leakedProcessNote, stopDirectChild } from "../process-snapshot.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const DUPLICATE_SCENARIO = fileURLToPath(new URL("../../examples/duplicate-submit/scenario.json", import.meta.url));
@@ -52,7 +52,7 @@ const STALE_TIMING_RESOLUTION_MS = 400;
 describe("verified delay reduction in chromium", { concurrency: false }, () => {
   it("tunes the duplicate-submit POST delay and exports that duration", { timeout: 1_200_000 }, async () => {
     const token = randomBytes(16).toString("hex");
-    const before = await browserPids();
+    const before = await browserSnapshot();
     const demo = await startDemoServer({ port: 0, appId: "duplicate-submit", resetAuthorization: token });
     const observed = observeFetch(fetch);
     try {
@@ -103,13 +103,13 @@ describe("verified delay reduction in chromium", { concurrency: false }, () => {
     } finally {
       await demo.close();
     }
-    const leaked = await waitForBrowsers(before);
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    const leaks = await finishBrowserCleanup(before);
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 
   it("tunes the stale-search GET delay and exports that duration", { timeout: 1_200_000 }, async () => {
     const token = randomBytes(16).toString("hex");
-    const before = await browserPids();
+    const before = await browserSnapshot();
     const demo = await startSearchServer({ port: 0, appId: "stale-search", resetAuthorization: token });
     const observed = observeFetch(fetch);
     try {
@@ -159,8 +159,8 @@ describe("verified delay reduction in chromium", { concurrency: false }, () => {
     } finally {
       await demo.close();
     }
-    const leaked = await waitForBrowsers(before);
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    const leaks = await finishBrowserCleanup(before);
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 });
 
@@ -444,7 +444,7 @@ function runPlaywright(config: string, origin: string, appId: string, token: str
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      stopDirectChild(child);
     }, 90_000);
     child.once("error", (error) => {
       clearTimeout(timer);
@@ -462,21 +462,6 @@ function runPlaywright(config: string, origin: string, appId: string, token: str
       });
     });
   });
-}
-
-async function waitForBrowsers(before: Set<number>): Promise<number[]> {
-  let leaked: number[] = [];
-  // Chrome for Testing can stay visible for several seconds after Playwright exits.
-  // The check still requires every new browser process to exit on its own.
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const after = await browserPids();
-    leaked = [...after].filter((pid) => !before.has(pid));
-    if (leaked.length === 0) {
-      return [];
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return leaked;
 }
 
 function stripAnsi(value: string): string {

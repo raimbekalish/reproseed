@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { describe, it } from "node:test";
 
 import {
@@ -7,12 +9,20 @@ import {
   PROCESS_TREE_ARGS,
   browserPidsFromListing,
   descendantPids,
+  directChildPid,
   killableOwnedBrowser,
   leakedProcessNote,
   listProcesses,
   parseProcessTree,
+  planOwnedBrowserSignal,
+  processCommand,
+  signalDirectChild,
   splitNewBrowserPids,
+  stopDirectChild,
+  type ProcessRecord,
 } from "./process-snapshot.ts";
+
+const CHROME = "/opt/ms-playwright/chromium-1248/chrome-linux64/chrome";
 
 describe("process snapshots", () => {
   it("uses a ps invocation that procps and macOS both accept", () => {
@@ -72,5 +82,163 @@ describe("process snapshots", () => {
     assert.equal(killableOwnedBrowser(42, "node --test"), false);
     assert.equal(killableOwnedBrowser(42, undefined), false);
     assert.equal(killableOwnedBrowser(42, records.find((record) => record.pid === 42)?.args), true);
+    const decisions = decisionsFor(records, new Set<number>(), 10, 10);
+    assert.deepEqual(
+      decisions.filter((decision) => decision.action === "signal").map((decision) => decision.pid),
+      [42, 43],
+    );
+    assert.equal(decisionFor(records, 99, 10, 10, chromeArgs(99, records)).reason, "not-owned");
+    assert.equal(decisionFor(records, 100, 10, 10, chromeArgs(100, records)).reason, "not-owned");
+    assert.equal(decisionFor(records, 200, 10, 10, chromeArgs(200, records)).reason, "not-owned");
+    assert.equal(decisionFor(records, 5, 10, 10, chromeArgs(5, records)).reason, "not-owned");
+    assert.equal(decisionFor(records, 99, 10, 10, chromeArgs(99, records)).action, "skip");
+  });
+
+  it("refuses pid 0, pid 1, the runner, a process group, and a reparented browser", () => {
+    const records = parseProcessTree(
+      ["  1 0 /sbin/init", `  42 1 ${CHROME}`, `  43 10 ${CHROME}`, "  10 1 node --test"].join("\n"),
+    );
+    assert.equal(planOwnedBrowserSignal({ pid: 0, rootPid: 10, runnerPid: 10, currentArgs: CHROME, records }).reason, "pid-out-of-range");
+    assert.equal(planOwnedBrowserSignal({ pid: 1, rootPid: 10, runnerPid: 10, currentArgs: CHROME, records }).reason, "pid-out-of-range");
+    assert.equal(planOwnedBrowserSignal({ pid: -42, rootPid: 10, runnerPid: 10, currentArgs: CHROME, records }).reason, "process-group");
+    assert.equal(planOwnedBrowserSignal({ pid: 10, rootPid: 10, runnerPid: 10, currentArgs: CHROME, records }).reason, "runner");
+    assert.equal(planOwnedBrowserSignal({ pid: 42, rootPid: 10, runnerPid: 10, currentArgs: CHROME, records }).reason, "not-owned");
+    assert.equal(planOwnedBrowserSignal({ pid: 43, rootPid: 10, runnerPid: 10, currentArgs: CHROME, records }).action, "signal");
+    assert.equal(planOwnedBrowserSignal({ pid: 43, rootPid: 0, runnerPid: 10, currentArgs: CHROME, records }).reason, "not-owned");
+    assert.equal(planOwnedBrowserSignal({ pid: 43, rootPid: 1, runnerPid: 10, currentArgs: CHROME, records }).reason, "not-owned");
+  });
+
+  it("skips a pid that exited or changed identity before signalling", () => {
+    const records = parseProcessTree([`  42 10 ${CHROME}`, "  10 1 node --test"].join("\n"));
+    assert.equal(
+      planOwnedBrowserSignal({ pid: 42, rootPid: 10, runnerPid: 10, currentArgs: undefined, records }).reason,
+      "exited",
+    );
+    assert.equal(
+      planOwnedBrowserSignal({ pid: 42, rootPid: 10, runnerPid: 10, currentArgs: "bash -c reused", records }).reason,
+      "identity-changed",
+    );
+    const reparented = parseProcessTree([`  42 1 ${CHROME}`, "  10 1 node --test"].join("\n"));
+    assert.equal(
+      planOwnedBrowserSignal({ pid: 42, rootPid: 10, runnerPid: 10, currentArgs: CHROME, records: reparented }).reason,
+      "not-owned",
+    );
+  });
+
+  it("signals only a direct child and ignores unsafe pids", () => {
+    const signaled: number[] = [];
+    const signal = (pid: number): void => {
+      signaled.push(pid);
+    };
+    assert.equal(signalDirectChild(42, 10, signal), true);
+    assert.equal(signalDirectChild(undefined, 10, signal), false);
+    assert.equal(signalDirectChild(0, 10, signal), false);
+    assert.equal(signalDirectChild(1, 10, signal), false);
+    assert.equal(signalDirectChild(-15, 10, signal), false);
+    assert.equal(signalDirectChild(10, 10, signal), false);
+    assert.deepEqual(signaled, [42]);
+    assert.equal(directChildPid(42, 10), 42);
+    assert.equal(directChildPid(1, 10), undefined);
+  });
+
+  it("stops a live direct child through its handle", async () => {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+    try {
+      await once(child, "spawn");
+      assert.equal(stopDirectChild(child), true);
+      assert.equal(child.killed, true);
+      assert.equal(stopDirectChild(child), false);
+      await once(child, "exit");
+      assert.equal(await processCommand(child.pid ?? 0), undefined);
+    } finally {
+      stopDirectChild(child);
+    }
+  });
+
+  it("leaves a child that already exited", async () => {
+    const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+    await once(child, "exit");
+    assert.equal(stopDirectChild(child), false);
+    assert.equal(await processCommand(child.pid ?? 0), undefined);
+  });
+
+  it("accepts a child whose kill method returns false", () => {
+    const destroyed: string[] = [];
+    const child = {
+      pid: 42,
+      kill() {
+        return false;
+      },
+      stdout: { destroy() { destroyed.push("stdout"); } },
+      stderr: { destroy() { destroyed.push("stderr"); } },
+    };
+    assert.equal(stopDirectChild(child), false);
+    assert.deepEqual(destroyed, ["stdout", "stderr"]);
+  });
+
+  it("does not signal an invalid or absent pid", () => {
+    for (const pid of [undefined, 0, 1, -15, process.pid]) {
+      let called = false;
+      assert.equal(
+        stopDirectChild({
+          pid,
+          kill() {
+            called = true;
+            return true;
+          },
+        }),
+        false,
+      );
+      assert.equal(called, false);
+    }
+  });
+
+  it("stops a direct child after an exception without a raw pid signal", async () => {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+    const raw: number[] = [];
+    const original = process.kill;
+    process.kill = ((pid: number, signal?: NodeJS.Signals | number) => {
+      raw.push(pid);
+      return original.call(process, pid, signal);
+    }) as typeof process.kill;
+    let failed = false;
+    try {
+      await once(child, "spawn");
+      try {
+        throw new Error("assertion failed");
+      } catch {
+        failed = true;
+        assert.equal(stopDirectChild(child), true);
+      }
+      await once(child, "exit");
+    } finally {
+      process.kill = original;
+      stopDirectChild(child);
+    }
+    assert.equal(failed, true);
+    assert.deepEqual(raw, []);
+    assert.equal(stopDirectChild.toString().includes("process.kill"), false);
   });
 });
+
+function chromeArgs(pid: number, records: readonly ProcessRecord[]): string {
+  return records.find((record) => record.pid === pid)?.args ?? "";
+}
+
+function decisionFor(
+  records: readonly ProcessRecord[],
+  pid: number,
+  rootPid: number,
+  runnerPid: number,
+  currentArgs: string | undefined,
+) {
+  return planOwnedBrowserSignal({ pid, rootPid, runnerPid, currentArgs, records });
+}
+
+function decisionsFor(records: readonly ProcessRecord[], before: ReadonlySet<number>, rootPid: number, runnerPid: number) {
+  const split = splitNewBrowserPids(records, before, rootPid);
+  return [...split.owned, ...split.suspected].map((pid) => ({
+    pid,
+    ...planOwnedBrowserSignal({ pid, rootPid, runnerPid, currentArgs: chromeArgs(pid, records), records }),
+  }));
+}

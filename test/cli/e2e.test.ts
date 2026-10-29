@@ -16,7 +16,15 @@ import { EXIT } from "../../src/cli/errors.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
 import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
 import { CORE_IDS, TARGET_SIGNATURE } from "../fixture.ts";
-import { browserPids, browserProcessNote, leakedProcessNote, processCommand } from "../process-snapshot.ts";
+import {
+  browserProcessNote,
+  browserSnapshot,
+  finishBrowserCleanup,
+  leakedProcessNote,
+  processCommand,
+  stopDirectChild,
+  type BrowserLeakSplit,
+} from "../process-snapshot.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const NODE_MODULES = join(REPO, "node_modules");
@@ -173,7 +181,7 @@ describe("built reproseed cli", { concurrency: false }, () => {
   it("refuses an unauthorized reset before launching a browser", async () => {
     const serverToken = randomBytes(16).toString("hex");
     const cliToken = randomBytes(16).toString("hex");
-    const before = await browserPids();
+    const before = await browserSnapshot();
     const demo = await startDemoServer({ port: 0, appId: APP_ID, resetAuthorization: serverToken });
     const work = await mkdtemp(join(tmpdir(), "reproseed-reset-"));
     try {
@@ -194,13 +202,13 @@ describe("built reproseed cli", { concurrency: false }, () => {
       await demo.close();
       await rm(work, { recursive: true, force: true });
     }
-    const leaked = await waitForBrowsers(before);
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    const leaks = await finishBrowserCleanup(before);
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 
   it("exits when the replay budget is exhausted and does not write a spec", async () => {
     const token = randomBytes(16).toString("hex");
-    const before = await browserPids();
+    const before = await browserSnapshot();
     const demo = await startDemoServer({ port: 0, appId: APP_ID, resetAuthorization: token });
     const work = await mkdtemp(join(tmpdir(), "reproseed-budget-"));
     try {
@@ -230,13 +238,13 @@ describe("built reproseed cli", { concurrency: false }, () => {
       await demo.close();
       await rm(work, { recursive: true, force: true });
     }
-    const leaked = await waitForBrowsers(before);
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    const leaks = await finishBrowserCleanup(before);
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 
   it("exits when the scenario does not reproduce a failure", async () => {
     const token = randomBytes(16).toString("hex");
-    const before = await browserPids();
+    const before = await browserSnapshot();
     const demo = await startDemoServer({ port: 0, appId: APP_ID, resetAuthorization: token });
     const work = await mkdtemp(join(tmpdir(), "reproseed-pass-"));
     try {
@@ -264,16 +272,16 @@ describe("built reproseed cli", { concurrency: false }, () => {
       await demo.close();
       await rm(work, { recursive: true, force: true });
     }
-    const leaked = await waitForBrowsers(before);
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    const leaks = await finishBrowserCleanup(before);
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 
   it("minimizes the duplicate-submit scenario and checks the exported test both ways", { timeout: 720_000 }, async () => {
     const token = randomBytes(16).toString("hex");
-    const before = await browserPids();
+    const before = await browserSnapshot();
     const demo = await startDemoServer({ port: 0, appId: APP_ID, resetAuthorization: token });
     const work = await mkdtemp(join(tmpdir(), "reproseed-e2e-"));
-    let leaked: number[] = [];
+    let leaks: BrowserLeakSplit = { owned: [], suspected: [] };
     try {
       await symlink(NODE_MODULES, join(work, "node_modules"));
       const result = await runCli(
@@ -383,25 +391,18 @@ describe("built reproseed cli", { concurrency: false }, () => {
       console.log(`RED exit ${red.code}; GREEN exit ${green.code}`);
     } finally {
       await demo.close();
-      leaked = await waitForBrowsers(before);
-      for (const pid of leaked) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // The process already exited.
-        }
-      }
+      leaks = await finishBrowserCleanup(before);
       await rm(work, { recursive: true, force: true });
     }
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 
   it("minimizes the stale-search scenario from the built CLI", { timeout: 720_000 }, async () => {
     const token = randomBytes(16).toString("hex");
-    const before = await browserPids();
+    const before = await browserSnapshot();
     const demo = await startSearchServer({ port: 0, appId: "stale-search", resetAuthorization: token });
     const work = await mkdtemp(join(tmpdir(), "reproseed-stale-e2e-"));
-    let leaked: number[] = [];
+    let leaks: BrowserLeakSplit = { owned: [], suspected: [] };
     try {
       await symlink(NODE_MODULES, join(work, "node_modules"));
       const result = await runCli(
@@ -492,17 +493,10 @@ export default defineConfig({
       assert.equal(green.output.includes(token), false);
     } finally {
       await demo.close();
-      leaked = await waitForBrowsers(before);
-      for (const pid of leaked) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // The process already exited.
-        }
-      }
+      leaks = await finishBrowserCleanup(before);
       await rm(work, { recursive: true, force: true });
     }
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 });
 
@@ -744,16 +738,7 @@ function readProcessArgs(pid: number): Promise<string | undefined> {
 }
 
 function stopChild(child: ChildProcess): void {
-  const pid = child.pid;
-  if (pid !== undefined && pid > 1) {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      // The process already exited.
-    }
-  }
-  child.stdout?.destroy();
-  child.stderr?.destroy();
+  stopDirectChild(child);
 }
 
 function captureChild(
@@ -905,21 +890,6 @@ function embeddedStepIds(source: string): string[] {
   assert.notEqual(end, -1);
   const value = vm.runInNewContext(source.slice(expressionStart, end), { JSON }) as { steps: Array<{ id: string }> };
   return value.steps.map((step) => step.id);
-}
-
-async function waitForBrowsers(before: Set<number>): Promise<number[]> {
-  let leaked: number[] = [];
-  // Chrome for Testing can stay visible for several seconds after Playwright exits.
-  // The check still requires every new browser process to exit on its own.
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const after = await browserPids();
-    leaked = [...after].filter((pid) => !before.has(pid));
-    if (leaked.length === 0) {
-      return [];
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return leaked;
 }
 
 function stripAnsi(value: string): string {
