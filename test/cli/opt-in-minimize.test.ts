@@ -11,7 +11,13 @@ import { startOptInServer } from "../../examples/opt-in-ticket/server.ts";
 import { EXIT } from "../../src/cli/errors.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
 import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
-import { browserPids, leakedProcessNote } from "../process-snapshot.ts";
+import {
+  browserSnapshot,
+  finishBrowserCleanup,
+  leakedProcessNote,
+  stopDirectChild,
+  type BrowserLeakSplit,
+} from "../process-snapshot.ts";
 
 const REPO = fileURLToPath(new URL("../..", import.meta.url));
 const SCENARIO = join(REPO, "examples/opt-in-ticket/scenario.json");
@@ -26,8 +32,8 @@ describe("opt-in ticket through the built CLI", { concurrency: false }, () => {
     await mkdir(work, { recursive: true });
     const cli = await stagePackage(root);
     const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
-    const before = await browserPids();
-    let leaked: number[] = [];
+    const before = await browserSnapshot();
+    let leaks: BrowserLeakSplit = { owned: [], suspected: [] };
     try {
       const filed = await fetch(`${server.origin}/api/tickets`, {
         method: "POST",
@@ -127,17 +133,10 @@ export default defineConfig({
       }
     } finally {
       await server.close();
-      leaked = await waitForBrowsers(before);
-      for (const pid of leaked) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // The process already exited.
-        }
-      }
+      leaks = await finishBrowserCleanup(before);
       await rm(root, { recursive: true, force: true });
     }
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 
   it("minimizes when reset verification and the oracle use different endpoints", { timeout: 600_000 }, async () => {
@@ -147,8 +146,8 @@ export default defineConfig({
     await mkdir(work, { recursive: true });
     const cli = await stagePackage(root);
     const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
-    const before = await browserPids();
-    let leaked: number[] = [];
+    const before = await browserSnapshot();
+    let leaks: BrowserLeakSplit = { owned: [], suspected: [] };
     try {
       const filed = await fetch(`${server.origin}/api/tickets`, {
         method: "POST",
@@ -210,17 +209,10 @@ export default defineConfig({
       );
     } finally {
       await server.close();
-      leaked = await waitForBrowsers(before);
-      for (const pid of leaked) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // The process already exited.
-        }
-      }
+      leaks = await finishBrowserCleanup(before);
       await rm(root, { recursive: true, force: true });
     }
-    assert.deepEqual(leaked, [], await leakedProcessNote(leaked));
+    assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
   });
 });
 
@@ -267,7 +259,7 @@ function runCli(
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
+      stopDirectChild(child);
     }, options.timeout);
     child.once("error", (error) => {
       clearTimeout(timer);
@@ -295,7 +287,7 @@ function runPlaywright(work: string, env: NodeJS.ProcessEnv): Promise<{ code: nu
     const stderr: Buffer[] = [];
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-    const timer = setTimeout(() => child.kill("SIGKILL"), 90_000);
+    const timer = setTimeout(() => stopDirectChild(child), 90_000);
     child.once("error", (error) => {
       clearTimeout(timer);
       reject(error);
@@ -308,15 +300,3 @@ function runPlaywright(work: string, env: NodeJS.ProcessEnv): Promise<{ code: nu
   });
 }
 
-async function waitForBrowsers(before: Set<number>): Promise<number[]> {
-  let leaked: number[] = [];
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const after = await browserPids();
-    leaked = [...after].filter((pid) => !before.has(pid));
-    if (leaked.length === 0) {
-      return [];
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return leaked;
-}

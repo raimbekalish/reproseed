@@ -13,13 +13,10 @@ import { EXIT } from "../../src/cli/errors.ts";
 import type { SanitizedMinimizeArtifact } from "../../src/runner/report.ts";
 import { useInstalledPlaywrightBrowsers } from "../../src/runner/session.ts";
 import {
-  BROWSER_PROCESS_PATTERN,
-  killableOwnedBrowser,
+  browserSnapshot,
+  finishBrowserCleanup,
   leakedProcessNote,
-  listProcessTree,
-  parseProcessTree,
-  processCommand,
-  splitNewBrowserPids,
+  stopDirectChild,
   type BrowserLeakSplit,
 } from "../process-snapshot.ts";
 
@@ -43,7 +40,7 @@ describe("fresh consumer install", { concurrency: false }, () => {
     const work = join(root, "app");
     await mkdir(work);
     const server = await startOptInServer({ port: 0, appId: APP_ID, resetAuthorization: token });
-    const before = browserPidsIn(parseProcessTree(await listProcessTree()));
+    const before = await browserSnapshot();
     let leaks: BrowserLeakSplit = { owned: [], suspected: [] };
     let fixed: Awaited<ReturnType<typeof startOptInServer>> | undefined;
     try {
@@ -167,23 +164,7 @@ export default defineConfig({
       await server.close();
       await fixed?.close();
       stopTrackedChildren();
-      leaks = await waitForOwnedBrowsers(before, process.pid);
-      for (const pid of leaks.owned) {
-        const args = await processCommand(pid);
-        if (!killableOwnedBrowser(pid, args)) {
-          continue;
-        }
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // The process already exited, or it is not ours to signal.
-        }
-      }
-      if (leaks.suspected.length > 0) {
-        console.log(
-          `Suspected browser processes were left running because ownership was not established:\n${await leakedProcessNote(leaks.suspected)}`,
-        );
-      }
+      leaks = await finishBrowserCleanup(before);
       await rm(root, { recursive: true, force: true });
     }
     assert.deepEqual(leaks.owned, [], await leakedProcessNote(leaks.owned));
@@ -377,35 +358,5 @@ function stopTrackedChildren(): void {
 }
 
 function stopChild(child: ChildProcess): void {
-  const pid = child.pid;
-  if (pid !== undefined && pid > 1) {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      // The process already exited.
-    }
-  }
-  child.stdout?.destroy();
-  child.stderr?.destroy();
-}
-
-function browserPidsIn(records: ReturnType<typeof parseProcessTree>): Set<number> {
-  return new Set(
-    records
-      .filter((record) => record.pid > 1 && BROWSER_PROCESS_PATTERN.test(record.args))
-      .map((record) => record.pid),
-  );
-}
-
-async function waitForOwnedBrowsers(before: Set<number>, rootPid: number): Promise<BrowserLeakSplit> {
-  let split = await readBrowserLeaks(before, rootPid);
-  for (let attempt = 0; attempt < 60 && split.owned.length > 0; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    split = await readBrowserLeaks(before, rootPid);
-  }
-  return split;
-}
-
-async function readBrowserLeaks(before: Set<number>, rootPid: number): Promise<BrowserLeakSplit> {
-  return splitNewBrowserPids(parseProcessTree(await listProcessTree()), before, rootPid);
+  stopDirectChild(child);
 }
