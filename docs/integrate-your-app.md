@@ -31,23 +31,24 @@ npx reproseed minimize --help
 
 `npm install reproseed` with no version installs the latest published release. Until `0.2.0` is published, that is `0.1.0`.
 
-## Unreleased 0.2.0 candidate
+## Unpublished 0.2.0 candidate
 
-Pack this repository. Install that tarball in a different directory. `npm install reproseed` does not install this candidate.
+Pack this repository. Install that tarball in a different directory. `npm install reproseed` does not install this candidate. While `package.json` is `0.2.0`, `npm pack` names the file `reproseed-0.2.0.tgz`.
 
 ```bash
 npm pack
 mkdir ../reproseed-consumer
 cd ../reproseed-consumer
 npm init -y
-npm install /absolute/path/reproseed-0.1.0.tgz
+npm install /absolute/path/reproseed-0.2.0.tgz
+npx reproseed --version
 npx reproseed --help
 npx reproseed init --help
 npx reproseed doctor --help
 npx reproseed minimize --help
 ```
 
-`--version` prints `0.1.0`. `init`, `doctor`, and `--trace` are present. This guide is `node_modules/reproseed/docs/integrate-your-app.md`. [trace-evidence.md](trace-evidence.md) is beside it. The example servers are not in the tarball.
+`--version` prints `0.2.0`. `init`, `doctor`, and `--trace` are present. This guide is `node_modules/reproseed/docs/integrate-your-app.md`. [trace-evidence.md](trace-evidence.md) is beside it. The example servers are not in the tarball. Printing `0.2.0` here does not mean the registry serves `0.2.0`.
 
 ## Published 0.2.0, after release
 
@@ -78,7 +79,7 @@ npm run build
 node dist/cli.js --help
 ```
 
-A checkout already has `@playwright/test` as a dev dependency at `1.64.1`. The built CLI includes `init`, `doctor`, and `--trace`. `--version` prints `0.1.0` until `0.2.0` is published.
+A checkout already has `@playwright/test` as a dev dependency at `1.64.1`. The built CLI includes `init`, `doctor`, and `--trace`. On this candidate, `--version` prints `0.2.0`. The registry's unversioned install is still published `0.1.0`.
 
 ## Create a scenario
 
