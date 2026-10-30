@@ -2,7 +2,7 @@
 
 ReproSeed is a local command-line tool. You give it a failing scenario for an authorized loopback test application. It deletes steps that are not required for that failure, then writes a Playwright regression test for the steps that remain.
 
-The published npm release is `0.1.0`, released October 25, 2026. This repository's `package.json` is the unpublished `0.2.0` candidate, so a checkout and a tarball packed from it print `0.2.0`. `npm install reproseed` from the registry still installs `0.1.0`. `0.2.0` is not on npm yet. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
+`0.1.0`, released October 25, 2026, is the first published release. This package is version `0.2.0`, dated October 29, 2026. A checkout or a tarball of this package prints `0.2.0`. Install `reproseed@0.2.0` from the registry only after `npm view reproseed@0.2.0 version` prints `0.2.0`. Until that check succeeds, `npm install reproseed` installs the latest registry release. ReproSeed source code is [MIT licensed](LICENSE), copyright (c) 2026 Raimbek Alish. Third-party dependencies keep their own licenses. Playwright, which the CLI uses to drive Chromium, is Apache-2.0.
 
 ## Install
 
@@ -31,30 +31,13 @@ npx reproseed minimize --help
 
 `0.1.0` minimizes a scenario and writes a regression test. `doctor`, `init`, and `--trace` are not in that package, and `--help` does not list them. [docs/integrate-your-app.md](docs/integrate-your-app.md) and [docs/trace-evidence.md](docs/trace-evidence.md) are not in that package either.
 
-`npm install reproseed` with no version installs the latest published release. Until `0.2.0` is published, that is `0.1.0`.
+`npm install reproseed` with no version installs the latest published release. Confirm it with `npm view reproseed version`.
 
-### Unpublished 0.2.0 candidate
+### Version 0.2.0
 
-This candidate is a checkout of this repository, or the tarball `npm pack` writes from it. It is not what `npm install reproseed` installs from the registry. While `package.json` is `0.2.0`, `npm pack` names the file `reproseed-0.2.0.tgz`. `--version` prints `0.2.0`.
+This package is version `0.2.0`. `--version` prints `0.2.0`. It includes `init`, `doctor`, and `minimize --trace`. The guides are at `node_modules/reproseed/docs/integrate-your-app.md` and `node_modules/reproseed/docs/trace-evidence.md`. Example servers are not in the package. `@playwright/test` is still a separate install.
 
-```bash
-npm pack
-mkdir ../reproseed-consumer
-cd ../reproseed-consumer
-npm init -y
-npm install /absolute/path/reproseed-0.2.0.tgz
-npx reproseed --version
-npx reproseed --help
-npx reproseed init --help
-npx reproseed doctor --help
-npx reproseed minimize --help
-```
-
-That tarball includes `init`, `doctor`, and `minimize --trace`. The guides are at `node_modules/reproseed/docs/integrate-your-app.md` and `node_modules/reproseed/docs/trace-evidence.md`. The copies on GitHub follow `main` and can move ahead of the tarball you packed. The example servers are not in the tarball.
-
-### Published 0.2.0, after release
-
-`0.2.0` is not on npm yet. After the owner publishes it:
+From the registry, after `npm view reproseed@0.2.0 version` prints `0.2.0`:
 
 ```bash
 npm install reproseed@0.2.0
@@ -64,7 +47,18 @@ npx reproseed doctor --help
 npx reproseed minimize --help
 ```
 
-`--version` prints `0.2.0`. The commands and the two guides match the candidate tarball. Example servers are still not in the package. `@playwright/test` is still a separate install. From then on, `npm install reproseed` with no version installs this release rather than `0.1.0`.
+Before that check succeeds, pack this repository. While `package.json` is `0.2.0`, `npm pack` names the file `reproseed-0.2.0.tgz`.
+
+```bash
+npm pack
+mkdir ../reproseed-consumer
+cd ../reproseed-consumer
+npm init -y
+npm install /absolute/path/reproseed-0.2.0.tgz
+npx reproseed --version
+```
+
+That tarball is this package. It is not evidence that the registry already serves `0.2.0`. When the registry reports `0.2.0` as latest, `npm install reproseed` with no version installs this release rather than `0.1.0`.
 
 Running a generated spec also needs the Chromium install above, `REPROSEED_ORIGIN`, `REPROSEED_APP_ID`, `REPROSEED_RESET_AUTHORIZATION`, and a loopback application you started. The quick start below is a checkout of this repository, where `node dist/cli.js` is the built CLI. An installed package uses `npx reproseed`.
 
@@ -92,7 +86,7 @@ Design notes that are not a user guide live in [docs/future-phase-corrections.md
 
 ## Integrate an application
 
-[docs/integrate-your-app.md](docs/integrate-your-app.md) is the path to a scenario on your own loopback app. Published `0.1.0` does not include that guide. The candidate tarball and, after publication, `reproseed@0.2.0` include it at `node_modules/reproseed/docs/integrate-your-app.md`. `init` and `doctor` are in those same packages and are absent from `0.1.0`. `doctor` checks a scenario without sending `POST /__reproseed/reset`. For a record-count scenario it checks `oracle.request.path` for the record shape the minimizer reads. `reset.verify.path` only has to return a JSON array, and the two paths can differ. It treats a connection failure, a redirect, a missing page, and a server error as different results. `examples/opt-in-ticket` is one application in this repository that opts in. Its default page is buggy. A test-only fixed page is used to show the same generated spec passing, and that page is not what `npm run demo:ticket` serves. That example server is not in the npm package.
+[docs/integrate-your-app.md](docs/integrate-your-app.md) is the path to a scenario on your own loopback app. Published `0.1.0` does not include that guide. Version `0.2.0` includes it at `node_modules/reproseed/docs/integrate-your-app.md`. `init` and `doctor` are in version `0.2.0` and are absent from `0.1.0`. `doctor` checks a scenario without sending `POST /__reproseed/reset`. For a record-count scenario it checks `oracle.request.path` for the record shape the minimizer reads. `reset.verify.path` only has to return a JSON array, and the two paths can differ. It treats a connection failure, a redirect, a missing page, and a server error as different results. `examples/opt-in-ticket` is one application in this repository that opts in. Its default page is buggy. A test-only fixed page is used to show the same generated spec passing, and that page is not what `npm run demo:ticket` serves. That example server is not in the npm package.
 
 ## Quick start
 
@@ -304,7 +298,7 @@ Package check, without publishing:
 npm run test:package
 ```
 
-That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help`, `reproseed --version`, `reproseed init`, and `reproseed doctor` must run from that install. `--version` prints the candidate version, `0.2.0`. The tarball contains `LICENSE`, `dist/` (including the embedded `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` assets), this README, `docs/integrate-your-app.md`, `docs/trace-evidence.md`, and the two original example scenario files. It does not contain credentials, `.env` files, `artifacts/`, test results, `node_modules`, the TypeScript source tree, or `examples/opt-in-ticket`.
+That builds, runs `npm pack`, and installs the tarball outside this checkout. `reproseed --help`, `reproseed --version`, `reproseed init`, and `reproseed doctor` must run from that install. `--version` prints `0.2.0`. The tarball contains `LICENSE`, `dist/` (including the embedded `dist/export/runtime-config.ts`, `delay-match.ts`, and `dom-text.ts` assets), this README, `docs/integrate-your-app.md`, `docs/trace-evidence.md`, and the two original example scenario files. It does not contain credentials, `.env` files, `artifacts/`, test results, `node_modules`, the TypeScript source tree, or `examples/opt-in-ticket`.
 
 ## Continuous integration
 
@@ -322,4 +316,4 @@ A new push to the same pull request cancels the previous run. The badge shows th
 
 ## Release status
 
-`0.1.0` (October 25, 2026) is the published release. `package.json` in this repository is `0.2.0` and does not set `private`. That version is the unpublished candidate. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) and [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md) describe `0.1.0`. [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md) describes the candidate and has no publication date. There are no earlier releases. Do not publish or tag from a pull request.
+`0.1.0` (October 25, 2026) is the first published release. `package.json` is `0.2.0`, dated October 29, 2026, and does not set `private`. Confirm registry availability with `npm view reproseed@0.2.0 version` before treating an npm install as that release. [LICENSE](LICENSE) is the MIT license for this source tree, with the copyright line `Copyright (c) 2026 Raimbek Alish`. Dependencies installed from npm keep their own licenses. [docs/licensing-proposal.md](docs/licensing-proposal.md) records that choice. [CHANGELOG.md](CHANGELOG.md) and [docs/v0.1.0-release-notes.md](docs/v0.1.0-release-notes.md) describe `0.1.0`. [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md) describes `0.2.0`. There are no earlier releases. Do not publish or tag from a pull request.
