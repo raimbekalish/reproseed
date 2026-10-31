@@ -1,14 +1,14 @@
 # Changelog
 
-0.1.0 is the first published release. This file does not invent earlier versions. 0.2.0 is dated 2026-10-29. That date is not proof that the registry already serves 0.2.0. Confirm with `npm view reproseed@0.2.0 version`.
+0.1.0 is the first published release. This file does not invent earlier versions. 0.2.0 is dated 2026-10-31. That date is not proof that the registry already serves 0.2.0. Confirm with `npm view reproseed@0.2.0 version`.
 
 ## [Unreleased]
 
 Nothing is queued past 0.2.0.
 
-## [0.2.0] - 2026-10-29
+## [0.2.0] - 2026-10-31
 
-Release date 2026-10-29. This section describes version 0.2.0. Published `0.1.0` does not include `init`, `doctor`, `--trace`, or the two guides. The notes are [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md).
+Release date 2026-10-31. This section describes version 0.2.0. Published `0.1.0` does not include `init`, `doctor`, `--trace`, or the two guides. The notes are [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md).
 
 ### Added
 
