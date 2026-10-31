@@ -1,27 +1,27 @@
 # Changelog
 
-0.1.0 is the first published release. This file does not invent earlier versions. The 0.2.0 section below is the unpublished candidate. It has no publication date.
+0.1.0 is the first published release. This file does not invent earlier versions. 0.2.0 is dated 2026-10-31. That date is not proof that the registry already serves 0.2.0. Confirm with `npm view reproseed@0.2.0 version`.
 
 ## [Unreleased]
 
-Nothing is queued past the 0.2.0 candidate.
+Nothing is queued past 0.2.0.
 
-## [0.2.0] - pending publication
+## [0.2.0] - 2026-10-31
 
-Pending publication. The date is added later, in a release-finalization commit. That commit is packed and published only after its own push-triggered CI succeeds. This section is not a claim that `0.2.0` is on npm. Published `0.1.0` does not include `init`, `doctor`, `--trace`, or the two guides. The notes are [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md).
+Release date 2026-10-31. This section describes version 0.2.0. Published `0.1.0` does not include `init`, `doctor`, `--trace`, or the two guides. The notes are [docs/v0.2.0-release-notes.md](docs/v0.2.0-release-notes.md).
 
 ### Added
 
 - `reproseed init` writes a starter scenario for the record-count or DOM-text oracle. It does not embed a reset credential or a production URL.
 - `reproseed doctor` checks a scenario, the loopback target, Chromium, and the clean-state GET without sending `POST /__reproseed/reset` or launching a browser.
 - `reproseed minimize --trace <file.zip>` records one Playwright trace after a verified minimization. The extra replay is separate from the five verification replays and is omitted from replay counts. A zip is verified evidence only when that replay reproduces the verified failure. Tracing stays off during minimization, and a trace failure does not change the minimization exit code or replace the report and spec. See [docs/trace-evidence.md](docs/trace-evidence.md).
-- [docs/integrate-your-app.md](docs/integrate-your-app.md) and [docs/trace-evidence.md](docs/trace-evidence.md) are included in the candidate tarball. The CLI dependency is Playwright `1.64.1`. Installing ReproSeed does not install `@playwright/test`, which a generated spec imports.
+- [docs/integrate-your-app.md](docs/integrate-your-app.md) and [docs/trace-evidence.md](docs/trace-evidence.md) are included in the 0.2.0 package. The CLI dependency is Playwright `1.64.1`. Installing ReproSeed does not install `@playwright/test`, which a generated spec imports.
 - `examples/opt-in-ticket`, a loopback application that opts in to identity, authorized reset, and a read-only clean-state list. The server is in this repository. It is not in the npm package.
 - A fresh install of the packed tarball, outside this repository, runs `init`, `doctor`, and `minimize`, confirms five verification replays, fails the generated spec on the buggy opt-in page, passes that same spec on the test-only fixed page, and opens the trace zip in Trace Viewer.
 
 ### Changed
 
-- `package.json` version is `0.2.0`. `npm install reproseed` from the registry still installs published `0.1.0` until the owner publishes this version. A checkout of this candidate and a tarball packed from it print `0.2.0`.
+- `package.json` version is `0.2.0`. `--version` prints `0.2.0`. `npm install reproseed` selects this version only after the registry reports it.
 - A failed `reproseed minimize --trace` leaves an existing zip unchanged and says that file may be stale. It is not presented as evidence for the current run. A trace save that passes the 5 second cleanup budget is still waited on, and the temporary zip is removed after that save settles.
 - `reproseed doctor` checks `reset.verify.path` only as a JSON array. For a record-count scenario, `oracle-endpoint` checks `oracle.request.path` for string `id`, `email`, and `note`, and numeric `createdAt`. The paths can differ. An empty oracle array still passes. A DOM-text scenario does not request a record list. The diagnostic names the item and the field and does not print record values.
 - `reproseed doctor` treats each scenario `goto` response as ready only when the status is successful. A connection failure, a redirect, a missing route, and a server error stay distinct. `GET /` is requested only when the scenario has no `goto` step.

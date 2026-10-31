@@ -1,6 +1,6 @@
 # Security policy
 
-ReproSeed resets and drives a local test application. The rules below are the product's safety boundary. Version 0.1.0, released October 25, 2026, is the supported published release. The `0.2.0` candidate in this repository is not published and is not the supported release until the owner publishes it.
+ReproSeed resets and drives a local test application. The rules below are the product's safety boundary. Version 0.1.0, released October 25, 2026, is the supported registry release until `npm view reproseed version` reports a later version. Version 0.2.0 is dated October 31, 2026. It is the supported registry release when `npm view reproseed@0.2.0 version` reports `0.2.0`.
 
 ## Authorized targets
 
@@ -42,11 +42,11 @@ Production targets are unsupported. The tool has no model for production account
 
 | Version | Supported |
 | --- | --- |
-| 0.1.0, released October 25, 2026 | Yes. This is the published release. |
-| 0.2.0 candidate in this repository | No. It is not on npm. It becomes the supported release only after the owner publishes it. |
+| 0.1.0, released October 25, 2026 | Yes, while `npm view reproseed version` reports `0.1.0`. |
+| 0.2.0, dated October 31, 2026 | Yes, when `npm view reproseed@0.2.0 version` reports `0.2.0`. Before that, it is the source version and not the registry release. |
 | Older commits | No |
 
-0.1.0 is the first published release. There is no earlier supported version. Security fixes for people who installed from npm apply to `0.1.0` until `0.2.0` is published. The `0.1.0` procedure is [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md). That runbook's tag-then-publish order is historical. The unpublished candidate checks, which publish before tagging, are [docs/v0.2.0-release-checklist.md](docs/v0.2.0-release-checklist.md).
+0.1.0 is the first published release. There is no earlier supported version. Security fixes for a registry install apply to the version `npm view reproseed version` reports. The `0.1.0` procedure is [docs/release-checklist.md](docs/release-checklist.md) and [docs/publish-runbook.md](docs/publish-runbook.md). That runbook's tag-then-publish order is historical. The `0.2.0` order, which publishes before tagging, is [docs/v0.2.0-release-checklist.md](docs/v0.2.0-release-checklist.md).
 
 ## Reporting a vulnerability
 
